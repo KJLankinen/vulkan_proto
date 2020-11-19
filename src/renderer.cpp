@@ -1,39 +1,94 @@
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#include <glm/glm.hpp>
-#include <stdio.h>
-#include <vulkan/vulkan.h>
+#include "renderer.h"
+
+namespace {
+VkResult CreateDebugReportCallBackEXT() {}
+} // namespace
 
 namespace vulkan_proto {
-struct Context {
-    VkInstance instance = VK_NULL_HANDLE;
-    VkSurfaceKHR surface = VK_NULL_HANDLE;
-};
 
-void run() {
-    Context context;
-    printf("Context created succesfully.\n");
-
+void initGLFW(Params &params) {
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    GLFWwindow *window =
+    params.window =
         glfwCreateWindow(800, 600, "Vulkan window", nullptr, nullptr);
+}
 
-    uint32_t nExtensions = 0;
-    vkEnumerateInstanceExtensionProperties(nullptr, &nExtensions, nullptr);
-    printf("# extensions: %d\n", nExtensions);
+void terminateGLFW(Params &params) {
+    glfwDestroyWindow(params.window);
+    glfwTerminate();
+}
 
-    glm::mat4 matrix;
-    glm::vec4 vec;
-    auto test = matrix * vec;
+void init(Params &params) {
+    initGLFW(params);
 
-    while (!glfwWindowShouldClose(window)) {
-        glfwPollEvents();
+    // Create instance
+    VkApplicationInfo appInfo = {};
+    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    appInfo.pApplicationName = "Vulkan prototype";
+    appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+    appInfo.pEngineName = "nengine";
+    appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+    appInfo.apiVersion = VK_API_VERSION_1_0;
+
+    VkInstanceCreateInfo instanceCi = {};
+    instanceCi.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    instanceCi.pApplicationInfo = &appInfo;
+
+#ifndef NDEBUG
+    std::array<const char *, 1> validationLayers = {
+        "VK_LAYER_KHRONOS_validation"};
+    uint32_t layerCount = 0;
+    vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+    std::vector<VkLayerProperties> availableLayers(layerCount);
+    vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+
+    bool foundAll = true;
+    for (uint32_t i = 0; i < validationLayers.size(); i++) {
+        bool found = false;
+        for (const auto &layerProps : availableLayers) {
+            if (0 == strcmp(validationLayers[i], layerProps.layerName)) {
+                found = true;
+                break;
+            }
+        }
+        foundAll &= found;
     }
 
-    glfwDestroyWindow(window);
-    glfwTerminate();
+    assert(foundAll && "Not all validation layers were found.");
+
+    instanceCi.enabledLayerCount = validationLayers.size();
+    instanceCi.ppEnabledLayerNames = validationLayers.data();
+#endif
+
+    uint32_t glfwExtensionCount = 0;
+    const char **glfwExtensions = nullptr;
+    glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+    std::vector<const char *> extensions(glfwExtensions,
+                                         glfwExtensions + glfwExtensionCount);
+#ifndef NDEBUG
+    extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+#endif
+
+    instanceCi.enabledExtensionCount = extensions.size();
+    instanceCi.ppEnabledExtensionNames = extensions.data();
+
+    VK_ASSERT_CALL(vkCreateInstance(&instanceCi, params.memoryAllocator,
+                                    &params.vulkanContext.instance));
+}
+
+void terminate(Params &params) {
+    if (VK_NULL_HANDLE != params.vulkanContext.device.logical) {
+        vkDeviceWaitIdle(params.vulkanContext.device.logical);
+    }
+
+    vkDestroyInstance(params.vulkanContext.instance, params.memoryAllocator);
+    terminateGLFW(params);
+}
+
+void run() {
+    Params params = {};
+    init(params);
+
+    terminate(params);
 }
 } // namespace vulkan_proto
