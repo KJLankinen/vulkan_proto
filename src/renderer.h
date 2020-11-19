@@ -5,7 +5,9 @@
 #include <assert.h>
 #include <cstring>
 #include <glm/glm.hpp>
-#include <stdio.h>
+#include <iostream>
+#include <sstream>
+#include <string>
 
 namespace vulkan_proto {
 

@@ -111,13 +111,58 @@ void createDevice(Params &params) {
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(params.vkc.instance, &deviceCount, nullptr);
     ABORT_IF(deviceCount == 0, "No physical devices available");
-    ABORT_IF(true, "Testing this thing here...");
+
+    std::vector<VkPhysicalDevice> devices(deviceCount);
+    vkEnumeratePhysicalDevices(params.vkc.instance, &deviceCount,
+                               devices.data());
+
+    auto evaluateDevice = [&deviceCount, &devices]() {
+        printf("Pick your preferred device and we'll check if that is suitable "
+               "for "
+               "our needs:\n");
+        uint32_t i = 0;
+        for (const auto &device : devices) {
+            VkPhysicalDeviceProperties devProps;
+            vkGetPhysicalDeviceProperties(device, &devProps);
+            printf("%d) %s\n", ++i, devProps.deviceName);
+        }
+
+        int deviceNum = -1;
+        std::string input;
+        getline(std::cin, input);
+        std::stringstream(input) >> deviceNum;
+
+        while (deviceNum < 1 || deviceNum > static_cast<int>(deviceCount)) {
+            printf("Bad input, try again\n");
+            getline(std::cin, input);
+            std::stringstream(input) >> deviceNum;
+
+            if (deviceNum > static_cast<int>(deviceCount)) {
+                deviceNum = -1;
+                printf("Choose a device from the given list\n");
+            }
+        }
+
+        printf("You chose device %d, checking it for compatibility...\n",
+               deviceNum);
+
+        return true;
+    };
+
+    std::string input;
+    while (evaluateDevice() == false) {
+        printf("Quit [Y/n]?");
+        getline(std::cin, input);
+        if (input.size() == 0 ||
+            (input.size() == 1 && (input.at(0) == 'y' || input.at(0) == 'Y'))) {
+            break;
+        }
+    }
 }
 
 void init(Params &params) {
     initGLFW(params);
     createInstance(params);
-    createDevice(params);
 
     // Create surface
     VK_ASSERT_CALL(glfwCreateWindowSurface(params.vkc.instance, params.window,
