@@ -1,11 +1,18 @@
 #include "renderer.h"
 
 namespace {
-VkResult CreateDebugReportCallBackEXT() {}
+#ifndef NDEBUG
+static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
+    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+    VkDebugUtilsMessageTypeFlagsEXT messageType,
+    const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *userData) {
+    fprintf(stderr, "validation layer: %s\n", pCallbackData->pMessage);
+    return false;
+}
+#endif
 } // namespace
 
 namespace vulkan_proto {
-
 void initGLFW(Params &params) {
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -14,13 +21,13 @@ void initGLFW(Params &params) {
 }
 
 void terminateGLFW(Params &params) {
-    glfwDestroyWindow(params.window);
+    if (params.window != nullptr) {
+        glfwDestroyWindow(params.window);
+    }
     glfwTerminate();
 }
 
-void init(Params &params) {
-    initGLFW(params);
-
+void createInstance(Params &params) {
     // Create instance
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -46,7 +53,7 @@ void init(Params &params) {
     for (uint32_t i = 0; i < validationLayers.size(); i++) {
         bool found = false;
         for (const auto &layerProps : availableLayers) {
-            if (0 == strcmp(validationLayers[i], layerProps.layerName)) {
+            if (strcmp(validationLayers[i], layerProps.layerName) == 0) {
                 found = true;
                 break;
             }
@@ -54,7 +61,7 @@ void init(Params &params) {
         foundAll &= found;
     }
 
-    assert(foundAll && "Not all validation layers were found.");
+    ABORT_IF(foundAll == false, "Not all validation layers were found");
 
     instanceCi.enabledLayerCount = validationLayers.size();
     instanceCi.ppEnabledLayerNames = validationLayers.data();
@@ -67,28 +74,95 @@ void init(Params &params) {
                                          glfwExtensions + glfwExtensionCount);
 #ifndef NDEBUG
     extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+
+    // Add call back for instance creation
+    VkDebugUtilsMessengerCreateInfoEXT dbgMsgrCi = {};
+    dbgMsgrCi.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+    dbgMsgrCi.messageSeverity =
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    dbgMsgrCi.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                            VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                            VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    dbgMsgrCi.pfnUserCallback = debugCallback;
+    dbgMsgrCi.pUserData = nullptr;
+
+    instanceCi.pNext = &dbgMsgrCi;
 #endif
 
     instanceCi.enabledExtensionCount = extensions.size();
     instanceCi.ppEnabledExtensionNames = extensions.data();
 
-    VK_ASSERT_CALL(vkCreateInstance(&instanceCi, params.memoryAllocator,
-                                    &params.vulkanContext.instance));
+    VK_ASSERT_CALL(
+        vkCreateInstance(&instanceCi, params.allocator, &params.vkc.instance));
+
+#ifndef NDEBUG
+    auto f = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
+        params.vkc.instance, "vkCreateDebugUtilsMessengerEXT");
+    ABORT_IF(f == nullptr,
+             "PFN_vkCreateDebugUtilsMessengerEXT returned nullptr");
+    VK_ASSERT_CALL(f(params.vkc.instance, &dbgMsgrCi, params.allocator,
+                     &params.vkc.dbgMsgr));
+#endif
+}
+
+void createDevice(Params &params) {
+    uint32_t deviceCount = 0;
+    vkEnumeratePhysicalDevices(params.vkc.instance, &deviceCount, nullptr);
+    ABORT_IF(deviceCount == 0, "No physical devices available");
+    ABORT_IF(true, "Testing this thing here...");
+}
+
+void init(Params &params) {
+    initGLFW(params);
+    createInstance(params);
+    createDevice(params);
+
+    // Create surface
+    VK_ASSERT_CALL(glfwCreateWindowSurface(params.vkc.instance, params.window,
+                                           params.allocator,
+                                           &params.vkc.surface));
+    createDevice(params);
 }
 
 void terminate(Params &params) {
-    if (VK_NULL_HANDLE != params.vulkanContext.device.logical) {
-        vkDeviceWaitIdle(params.vulkanContext.device.logical);
+    if (params.vkc.device.logical != VK_NULL_HANDLE) {
+        vkDeviceWaitIdle(params.vkc.device.logical);
     }
 
-    vkDestroyInstance(params.vulkanContext.instance, params.memoryAllocator);
+    if (params.vkc.instance != VK_NULL_HANDLE) {
+#ifndef NDEBUG
+        auto f = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
+            params.vkc.instance, "vkDestroyDebugUtilsMessengerEXT");
+        if (f != nullptr) {
+            f(params.vkc.instance, params.vkc.dbgMsgr, params.allocator);
+        }
+#endif
+
+        if (params.vkc.surface != VK_NULL_HANDLE) {
+            vkDestroySurfaceKHR(params.vkc.instance, params.vkc.surface,
+                                params.allocator);
+        }
+        vkDestroyInstance(params.vkc.instance, params.allocator);
+    }
+
     terminateGLFW(params);
 }
 
 void run() {
     Params params = {};
     init(params);
-
     terminate(params);
+}
+
+void abortIf(Params &params, bool condition, const char *msg, const char *file,
+             int line) {
+    if (condition) {
+        fprintf(stderr, "'%s' at %s:%d\n", msg, file, line);
+        fprintf(stderr, "Aborting\n");
+        terminate(params);
+        exit(EXIT_FAILURE);
+    }
 }
 } // namespace vulkan_proto

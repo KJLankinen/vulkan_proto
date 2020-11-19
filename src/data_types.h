@@ -29,11 +29,12 @@ struct VulkanContext {
     VkInstance instance = VK_NULL_HANDLE;
     Device device;
     VkSurfaceKHR surface = VK_NULL_HANDLE;
+    VkDebugUtilsMessengerEXT dbgMsgr = VK_NULL_HANDLE;
 };
 
 struct Params {
-    VulkanContext vulkanContext;
+    VulkanContext vkc;
     GLFWwindow *window = nullptr;
-    VkAllocationCallbacks *memoryAllocator = nullptr;
+    VkAllocationCallbacks *allocator = nullptr;
 };
 }

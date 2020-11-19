@@ -9,12 +9,15 @@
 #define VK_ASSERT_CALL(call) call
 #endif
 
+#define ABORT_IF(condition, msg)                                               \
+    vulkan_proto::abortIf(params, condition, msg, __FILE__, __LINE__)
+
 namespace vulkan_proto {
 inline void assertVulkanCallResult(VkResult result, const char *callStr,
                                    const char *file, int line) {
     if (VK_SUCCESS != result) {
-        printf("Vulkan error '%d':\n%s\nat %s:%d\n", result, callStr, file,
-               line);
+        fprintf(stderr, "Vulkan error '%d':\n%s\nat %s:%d\n", result, callStr,
+                file, line);
         assert(false);
     }
 }
