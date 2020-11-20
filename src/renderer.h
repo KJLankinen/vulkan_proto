@@ -16,8 +16,9 @@ void initGLFW(Params &params);
 void createInstance(Params &params);
 void createDevice(Params &params);
 
-void abortIf(Params &params, bool condition, const char *msg, const char *file,
-             int line);
+void abortIf(Params &params, bool condition, const char *msg,
+             const char *fileName, int line);
+void log(Params &params, Verbosity verbosity, FILE *stream, const char *msg);
 void run();
 
 void terminate(Params &params);

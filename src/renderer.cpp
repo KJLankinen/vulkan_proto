@@ -6,7 +6,15 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT messageType,
     const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *userData) {
-    fprintf(stderr, "validation layer: %s\n", pCallbackData->pMessage);
+    std::stringstream ss;
+    ss << "validation layer: " << pCallbackData->pMessage << "\n";
+    if (userData != nullptr) {
+        vulkan_proto::Params &params =
+            *static_cast<vulkan_proto::Params *>(userData);
+        EDBLOG(ss.str().c_str());
+    } else {
+        fprintf(stderr, ss.str().c_str());
+    }
     return false;
 }
 #endif
@@ -14,6 +22,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
 
 namespace vulkan_proto {
 void initGLFW(Params &params) {
+    LOG("=GLFW init=\n");
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     params.window =
@@ -21,6 +30,7 @@ void initGLFW(Params &params) {
 }
 
 void terminateGLFW(Params &params) {
+    LOG("=GLFW terminate=\n");
     if (params.window != nullptr) {
         glfwDestroyWindow(params.window);
     }
@@ -28,7 +38,7 @@ void terminateGLFW(Params &params) {
 }
 
 void createInstance(Params &params) {
-    // Create instance
+    LOG("=Instance creation=\n");
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.pApplicationName = "Vulkan prototype";
@@ -44,10 +54,10 @@ void createInstance(Params &params) {
 #ifndef NDEBUG
     std::vector<VkLayerProperties> availableLayers;
     uint32_t layerCount = 0;
-    VK_ASSERT_CALL(vkEnumerateInstanceLayerProperties(&layerCount, nullptr));
+    VK_CHECK(vkEnumerateInstanceLayerProperties(&layerCount, nullptr));
     availableLayers.resize(layerCount);
-    VK_ASSERT_CALL(vkEnumerateInstanceLayerProperties(&layerCount,
-                                                      availableLayers.data()));
+    VK_CHECK(vkEnumerateInstanceLayerProperties(&layerCount,
+                                                availableLayers.data()));
 
     bool foundAll = true;
     for (uint32_t i = 0; i < params.vkc.validationLayers.size(); i++) {
@@ -80,17 +90,20 @@ void createInstance(Params &params) {
     extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 
     // Add call back for instance creation
-    // VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT
     VkDebugUtilsMessengerCreateInfoEXT dbgMsgrCi = {};
     dbgMsgrCi.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
     dbgMsgrCi.messageSeverity =
         VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
         VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    if (params.log.verbosity == Verbosity::DEBUG) {
+        dbgMsgrCi.messageSeverity |=
+            VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
+    }
     dbgMsgrCi.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
                             VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
                             VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
     dbgMsgrCi.pfnUserCallback = debugCallback;
-    dbgMsgrCi.pUserData = nullptr;
+    dbgMsgrCi.pUserData = static_cast<void *>(&params);
 
     instanceCi.pNext = &dbgMsgrCi;
 #endif
@@ -98,7 +111,7 @@ void createInstance(Params &params) {
     instanceCi.enabledExtensionCount = extensions.size();
     instanceCi.ppEnabledExtensionNames = extensions.data();
 
-    VK_ASSERT_CALL(
+    VK_CHECK(
         vkCreateInstance(&instanceCi, params.allocator, &params.vkc.instance));
 
 #ifndef NDEBUG
@@ -106,20 +119,21 @@ void createInstance(Params &params) {
         params.vkc.instance, "vkCreateDebugUtilsMessengerEXT");
     ABORT_IF(f == nullptr,
              "PFN_vkCreateDebugUtilsMessengerEXT returned nullptr");
-    VK_ASSERT_CALL(f(params.vkc.instance, &dbgMsgrCi, params.allocator,
-                     &params.vkc.dbgMsgr));
+    VK_CHECK(f(params.vkc.instance, &dbgMsgrCi, params.allocator,
+               &params.vkc.dbgMsgr));
 #endif
 }
 
 void createDevice(Params &params) {
+    LOG("=Device creation=\n");
     uint32_t deviceCount = 0;
-    VK_ASSERT_CALL(
+    VK_CHECK(
         vkEnumeratePhysicalDevices(params.vkc.instance, &deviceCount, nullptr));
     ABORT_IF(deviceCount == 0, "No physical devices available");
 
     std::vector<VkPhysicalDevice> devices(deviceCount);
-    VK_ASSERT_CALL(vkEnumeratePhysicalDevices(params.vkc.instance, &deviceCount,
-                                              devices.data()));
+    VK_CHECK(vkEnumeratePhysicalDevices(params.vkc.instance, &deviceCount,
+                                        devices.data()));
 
     VkSurfaceCapabilitiesKHR surfaceCapabilities;
     std::vector<VkPresentModeKHR> presentModes;
@@ -130,10 +144,10 @@ void createDevice(Params &params) {
     auto checkExtensionSupport = [&params](const VkPhysicalDevice &device) {
         std::vector<VkExtensionProperties> extProps;
         uint32_t extensionCount = 0;
-        VK_ASSERT_CALL(vkEnumerateDeviceExtensionProperties(
+        VK_CHECK(vkEnumerateDeviceExtensionProperties(
             device, nullptr, &extensionCount, nullptr));
         extProps.resize(extensionCount);
-        VK_ASSERT_CALL(vkEnumerateDeviceExtensionProperties(
+        VK_CHECK(vkEnumerateDeviceExtensionProperties(
             device, nullptr, &extensionCount, extProps.data()));
 
         bool extensionsFound = true;
@@ -159,35 +173,34 @@ void createDevice(Params &params) {
     auto checkQueueSupport = [&surfaceCapabilities, &presentModes,
                               &surfaceFormats, &params, &graphicsFamily,
                               &presentFamily](const VkPhysicalDevice &device) {
-        VK_ASSERT_CALL(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
+        VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
             device, params.vkc.surface, &surfaceCapabilities));
 
         surfaceFormats.clear();
         uint32_t formatCount = 0;
-        VK_ASSERT_CALL(vkGetPhysicalDeviceSurfaceFormatsKHR(
+        VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(
             device, params.vkc.surface, &formatCount, nullptr));
         surfaceFormats.resize(formatCount);
-        VK_ASSERT_CALL(vkGetPhysicalDeviceSurfaceFormatsKHR(
+        VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(
             device, params.vkc.surface, &formatCount, surfaceFormats.data()));
 
         if (surfaceFormats.empty()) {
-            printf("Physical device does not support any surface formats,\n"
-                   "vkGetPhysicalDeviceSurfaceFormatsKHR returned empty.\n");
+            ELOG("Physical device does not support any surface formats,\n"
+                 "vkGetPhysicalDeviceSurfaceFormatsKHR returned empty.\n");
             return false;
         }
 
         presentModes.clear();
         uint32_t modeCount = 0;
-        VK_ASSERT_CALL(vkGetPhysicalDeviceSurfacePresentModesKHR(
+        VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(
             device, params.vkc.surface, &modeCount, nullptr));
         presentModes.resize(modeCount);
-        VK_ASSERT_CALL(vkGetPhysicalDeviceSurfacePresentModesKHR(
+        VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(
             device, params.vkc.surface, &modeCount, presentModes.data()));
 
         if (presentModes.empty()) {
-            printf(
-                "Physical device does not support any present modes,\n"
-                "vkGetPhysicalDeviceSurfacePresentModesKHR returned empty.\n");
+            ELOG("Physical device does not support any present modes,\n"
+                 "vkGetPhysicalDeviceSurfacePresentModesKHR returned empty.\n");
             return false;
         }
 
@@ -219,13 +232,13 @@ void createDevice(Params &params) {
 
         if (gf == -1 || pf == -1) {
             if (gf == -1) {
-                printf("The device does not have a queue family with "
-                       "VK_QUEUE_GRAPHICS_BIT set\n");
+                ELOG("The device does not have a queue family with "
+                     "VK_QUEUE_GRAPHICS_BIT set\n");
             }
 
             if (pf == -1) {
-                printf("The device does not have a queue family with present "
-                       "support\n");
+                ELOG("The device does not have a queue family with present "
+                     "support\n");
             }
 
             return false;
@@ -253,8 +266,7 @@ void createDevice(Params &params) {
                            &presentModes, &surfaceFormats,
                            &surfaceCapabilities]() {
         printf("Pick your preferred device and we'll check if that is suitable "
-               "for "
-               "our needs:\n");
+               "for our needs:\n");
         uint32_t i = 0;
         for (const auto &device : devices) {
             VkPhysicalDeviceProperties devProps;
@@ -282,29 +294,28 @@ void createDevice(Params &params) {
 
         VkPhysicalDeviceProperties devProps;
         vkGetPhysicalDeviceProperties(devices[deviceNum], &devProps);
-        printf("You chose device %d) %s, checking it for compatibility...\n",
-               deviceNum + 1, devProps.deviceName);
+        LOG("You chose device %d) %s, checking it for compatibility...\n",
+            deviceNum + 1, devProps.deviceName);
 
         if (checkExtensionSupport(devices[deviceNum]) == false) {
-            printf("Not all required extensions are supported by the "
-                   "device.\nChoose a new device or quit.\n");
+            ELOG("Not all required extensions are supported by the "
+                 "device.\n");
             return false;
         }
 
         if (checkQueueSupport(devices[deviceNum]) == false) {
-            printf("Could not find suitable queues from the "
-                   "device.\nChoose a new device or quit.\n");
+            ELOG("Could not find suitable queues from the "
+                 "device.\n");
             return false;
         }
 
         if (checkFeatureSupport(devices[deviceNum]) == false) {
-            printf("Not all required features are supported by the "
-                   "device.\nChoose a new device or quit.\n");
+            ELOG("Not all required features are supported by the "
+                 "device.\n");
             return false;
         }
 
-        printf("The device you chose passed all checks and is "
-               "suitable.\nProceeding with device creation.\n");
+        LOG("Device passed all checks\n");
 
         params.vkc.device.physical.device = devices[deviceNum];
         params.vkc.device.physical.surfaceCapabilities = surfaceCapabilities;
@@ -323,7 +334,7 @@ void createDevice(Params &params) {
 
     std::string input;
     while (evaluateDevice() == false) {
-        printf("Quit [Y/n]?");
+        printf("Choose a new device or quit.\nQuit [Y/n]?");
         getline(std::cin, input);
         if (input.size() == 0 ||
             (input.size() == 1 && (input.at(0) == 'y' || input.at(0) == 'Y'))) {
@@ -335,21 +346,20 @@ void createDevice(Params &params) {
 void init(Params &params) {
     initGLFW(params);
     createInstance(params);
-
-    // Create surface
-    VK_ASSERT_CALL(glfwCreateWindowSurface(params.vkc.instance, params.window,
-                                           params.allocator,
-                                           &params.vkc.surface));
+    LOG("=Surface creation=\n");
+    VK_CHECK(glfwCreateWindowSurface(params.vkc.instance, params.window,
+                                     params.allocator, &params.vkc.surface));
     createDevice(params);
 }
 
 void terminate(Params &params) {
     if (params.vkc.device.logical != VK_NULL_HANDLE) {
-        VK_ASSERT_CALL(vkDeviceWaitIdle(params.vkc.device.logical));
+        VK_CHECK(vkDeviceWaitIdle(params.vkc.device.logical));
     }
 
     if (params.vkc.instance != VK_NULL_HANDLE) {
 #ifndef NDEBUG
+        LOG("=Destroy debug messenger=\n");
         auto f = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
             params.vkc.instance, "vkDestroyDebugUtilsMessengerEXT");
         if (f != nullptr) {
@@ -358,10 +368,12 @@ void terminate(Params &params) {
 #endif
 
         if (params.vkc.surface != VK_NULL_HANDLE) {
+            LOG("=Destroy surface=\n");
             vkDestroySurfaceKHR(params.vkc.instance, params.vkc.surface,
                                 params.allocator);
         }
 
+        LOG("=Destroy instance=\n");
         vkDestroyInstance(params.vkc.instance, params.allocator);
     }
 
@@ -372,15 +384,5 @@ void run() {
     Params params = {};
     init(params);
     terminate(params);
-}
-
-void abortIf(Params &params, bool condition, const char *msg, const char *file,
-             int line) {
-    if (condition) {
-        fprintf(stderr, "'%s' at %s:%d\n", msg, file, line);
-        fprintf(stderr, "Aborting\n");
-        terminate(params);
-        exit(EXIT_FAILURE);
-    }
 }
 } // namespace vulkan_proto

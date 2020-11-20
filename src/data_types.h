@@ -4,6 +4,9 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <array>
+#include <cstdio>
+#include <iostream>
+#include <ostream>
 #include <vector>
 #include <vulkan/vulkan.h>
 
@@ -37,9 +40,26 @@ struct VulkanContext {
         "VK_LAYER_KHRONOS_validation"};
 };
 
+enum class Verbosity {
+    SILENT,
+    NORMAL,
+    DEBUG,
+};
+
+struct Log {
+#ifndef NDEBUG
+    Verbosity verbosity = Verbosity::DEBUG;
+#else
+    Verbosity verbosity = Verbosity::SILENT;
+#endif
+    std::ostream &errStream = std::cerr;
+    std::ostream &outStream = std::cout;
+};
+
 struct Params {
     VulkanContext vkc;
     GLFWwindow *window = nullptr;
     VkAllocationCallbacks *allocator = nullptr;
+    Log log = {};
 };
 }
