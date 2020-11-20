@@ -64,11 +64,15 @@ struct VulkanContext {
     VkAllocationCallbacks *allocator = nullptr;
 };
 
-struct Params {
-    VulkanContext vkc = {};
+struct Log {
     std::ofstream *fileStream = nullptr;
     std::chrono::steady_clock::time_point startingTime;
     std::stringstream timess;
+};
+
+struct Params {
+    VulkanContext vkc = {};
+    Log log = {};
     GLFWwindow *window = nullptr;
     uint32_t windowWidth = 800;
     uint32_t windowHeight = 600;

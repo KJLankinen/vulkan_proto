@@ -7,8 +7,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     VkDebugUtilsMessageTypeFlagsEXT messageType,
     const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *userData) {
     if (userData != nullptr) {
-        vulkan_proto::Params &params =
-            *static_cast<vulkan_proto::Params *>(userData);
+        vulkan_proto::Log &log = *static_cast<vulkan_proto::Log *>(userData);
         LOG("validation layer: %s", pCallbackData->pMessage);
     } else {
         fprintf(stderr, "validation layer: %s", pCallbackData->pMessage);
@@ -19,7 +18,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
 } // namespace
 
 namespace vulkan_proto {
-void createInstance(Params &params) {
+void createInstance(VulkanContext &vkc, Log &log) {
     LOG("=Create instance=");
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -42,11 +41,10 @@ void createInstance(Params &params) {
                                                 availableLayers.data()));
 
     bool foundAll = true;
-    for (uint32_t i = 0; i < params.vkc.validationLayers.size(); i++) {
+    for (uint32_t i = 0; i < vkc.validationLayers.size(); i++) {
         bool found = false;
         for (const auto &layerProps : availableLayers) {
-            if (strcmp(params.vkc.validationLayers[i], layerProps.layerName) ==
-                0) {
+            if (strcmp(vkc.validationLayers[i], layerProps.layerName) == 0) {
                 found = true;
                 break;
             }
@@ -57,10 +55,10 @@ void createInstance(Params &params) {
         }
     }
 
-    ABORT_IF(foundAll == false, "Not all validation layers were found");
+    THROW_IF(foundAll == false, "Not all validation layers were found");
 
-    instanceCi.enabledLayerCount = params.vkc.validationLayers.size();
-    instanceCi.ppEnabledLayerNames = params.vkc.validationLayers.data();
+    instanceCi.enabledLayerCount = vkc.validationLayers.size();
+    instanceCi.ppEnabledLayerNames = vkc.validationLayers.data();
 #endif
 
     uint32_t glfwExtensionCount = 0;
@@ -77,15 +75,11 @@ void createInstance(Params &params) {
     dbgMsgrCi.messageSeverity =
         VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
         VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-    // if (params.log.verbosity == Verbosity::DEBUG) {
-    //    dbgMsgrCi.messageSeverity |=
-    //        VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
-    //}
     dbgMsgrCi.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
                             VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
                             VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
     dbgMsgrCi.pfnUserCallback = debugCallback;
-    dbgMsgrCi.pUserData = static_cast<void *>(&params);
+    dbgMsgrCi.pUserData = static_cast<void *>(&log);
 
     instanceCi.pNext = &dbgMsgrCi;
 #endif
@@ -93,30 +87,27 @@ void createInstance(Params &params) {
     instanceCi.enabledExtensionCount = extensions.size();
     instanceCi.ppEnabledExtensionNames = extensions.data();
 
-    VK_CHECK(vkCreateInstance(&instanceCi, params.vkc.allocator,
-                              &params.vkc.instance));
+    VK_CHECK(vkCreateInstance(&instanceCi, vkc.allocator, &vkc.instance));
 
 #ifndef NDEBUG
     LOG("=Create debug messenger=");
     auto f = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
-        params.vkc.instance, "vkCreateDebugUtilsMessengerEXT");
-    ABORT_IF(f == nullptr,
+        vkc.instance, "vkCreateDebugUtilsMessengerEXT");
+    THROW_IF(f == nullptr,
              "PFN_vkCreateDebugUtilsMessengerEXT returned nullptr");
-    VK_CHECK(f(params.vkc.instance, &dbgMsgrCi, params.vkc.allocator,
-               &params.vkc.dbgMsgr));
+    VK_CHECK(f(vkc.instance, &dbgMsgrCi, vkc.allocator, &vkc.dbgMsgr));
 #endif
 }
 
-void createDevice(Params &params) {
+void createDevice(VulkanContext &vkc, Log &log) {
     LOG("=Create physical device=");
     uint32_t deviceCount = 0;
-    VK_CHECK(
-        vkEnumeratePhysicalDevices(params.vkc.instance, &deviceCount, nullptr));
-    ABORT_IF(deviceCount == 0, "No physical devices available");
+    VK_CHECK(vkEnumeratePhysicalDevices(vkc.instance, &deviceCount, nullptr));
+    THROW_IF(deviceCount == 0, "No physical devices available");
 
     std::vector<VkPhysicalDevice> devices(deviceCount);
-    VK_CHECK(vkEnumeratePhysicalDevices(params.vkc.instance, &deviceCount,
-                                        devices.data()));
+    VK_CHECK(
+        vkEnumeratePhysicalDevices(vkc.instance, &deviceCount, devices.data()));
 
     VkSurfaceCapabilitiesKHR surfaceCapabilities;
     std::vector<VkPresentModeKHR> presentModes;
@@ -124,7 +115,7 @@ void createDevice(Params &params) {
     uint32_t graphicsFamily = 0;
     uint32_t presentFamily = 0;
 
-    auto checkExtensionSupport = [&params](const VkPhysicalDevice &device) {
+    auto checkExtensionSupport = [&vkc, &log](const VkPhysicalDevice &device) {
         std::vector<VkExtensionProperties> extProps;
         uint32_t extensionCount = 0;
         VK_CHECK(vkEnumerateDeviceExtensionProperties(
@@ -134,8 +125,7 @@ void createDevice(Params &params) {
             device, nullptr, &extensionCount, extProps.data()));
 
         bool extensionsFound = true;
-        for (const auto &requiredExt :
-             params.vkc.device.physical.requiredExtensions) {
+        for (const auto &requiredExt : vkc.device.physical.requiredExtensions) {
             bool found = false;
             for (const auto &availExt : extProps) {
                 if (strcmp(requiredExt, availExt.extensionName) == 0) {
@@ -154,18 +144,19 @@ void createDevice(Params &params) {
     };
 
     auto checkQueueSupport = [&surfaceCapabilities, &presentModes,
-                              &surfaceFormats, &params, &graphicsFamily,
-                              &presentFamily](const VkPhysicalDevice &device) {
+                              &surfaceFormats, &vkc, &graphicsFamily,
+                              &presentFamily,
+                              &log](const VkPhysicalDevice &device) {
         VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
-            device, params.vkc.surface, &surfaceCapabilities));
+            device, vkc.surface, &surfaceCapabilities));
 
         surfaceFormats.clear();
         uint32_t formatCount = 0;
-        VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(
-            device, params.vkc.surface, &formatCount, nullptr));
+        VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(device, vkc.surface,
+                                                      &formatCount, nullptr));
         surfaceFormats.resize(formatCount);
         VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(
-            device, params.vkc.surface, &formatCount, surfaceFormats.data()));
+            device, vkc.surface, &formatCount, surfaceFormats.data()));
 
         if (surfaceFormats.empty()) {
             LOG("Physical device does not support any surface formats,\n"
@@ -176,10 +167,10 @@ void createDevice(Params &params) {
         presentModes.clear();
         uint32_t modeCount = 0;
         VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(
-            device, params.vkc.surface, &modeCount, nullptr));
+            device, vkc.surface, &modeCount, nullptr));
         presentModes.resize(modeCount);
         VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(
-            device, params.vkc.surface, &modeCount, presentModes.data()));
+            device, vkc.surface, &modeCount, presentModes.data()));
 
         if (presentModes.empty()) {
             LOG("Physical device does not support any present modes,\n"
@@ -200,8 +191,8 @@ void createDevice(Params &params) {
             const VkQueueFamilyProperties &qfp = qFamProps[i];
             if (qfp.queueCount > 0) {
                 VkBool32 presentSupport = false;
-                vkGetPhysicalDeviceSurfaceSupportKHR(
-                    device, i, params.vkc.surface, &presentSupport);
+                vkGetPhysicalDeviceSurfaceSupportKHR(device, i, vkc.surface,
+                                                     &presentSupport);
                 pf = presentSupport ? static_cast<int>(i) : pf;
                 gf = (qfp.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0
                          ? static_cast<int>(i)
@@ -235,19 +226,17 @@ void createDevice(Params &params) {
         return true;
     };
 
-    auto checkFeatureSupport = [&params](const VkPhysicalDevice &device) {
+    auto checkFeatureSupport = [](const VkPhysicalDevice &device) {
         VkPhysicalDeviceFeatures features;
         vkGetPhysicalDeviceFeatures(device, &features);
         return features.geometryShader && features.tessellationShader &&
-               features.samplerAnisotropy; 
-
+               features.samplerAnisotropy;
     };
 
     auto evaluateDevice = [&deviceCount, &devices, &checkExtensionSupport,
                            &checkQueueSupport, &checkFeatureSupport,
-                           &graphicsFamily, &presentFamily, &params,
-                           &presentModes, &surfaceFormats,
-                           &surfaceCapabilities]() {
+                           &graphicsFamily, &presentFamily, &vkc, &presentModes,
+                           &surfaceFormats, &surfaceCapabilities, &log]() {
         printf("Pick your preferred device and we'll check if that is suitable "
                "for our needs:\n");
         uint32_t i = 0;
@@ -300,17 +289,16 @@ void createDevice(Params &params) {
 
         LOG("Device passed all checks");
 
-        params.vkc.device.physical.device = devices[deviceNum];
-        params.vkc.device.physical.surfaceCapabilities = surfaceCapabilities;
-        params.vkc.device.physical.surfaceFormats = surfaceFormats;
-        params.vkc.device.physical.presentModes = presentModes;
-        params.vkc.device.physical.graphicsFamily = graphicsFamily;
-        params.vkc.device.physical.presentFamily = presentFamily;
+        vkc.device.physical.device = devices[deviceNum];
+        vkc.device.physical.surfaceCapabilities = surfaceCapabilities;
+        vkc.device.physical.surfaceFormats = surfaceFormats;
+        vkc.device.physical.presentModes = presentModes;
+        vkc.device.physical.graphicsFamily = graphicsFamily;
+        vkc.device.physical.presentFamily = presentFamily;
 
         // Cache these for later
         vkGetPhysicalDeviceMemoryProperties(
-            params.vkc.device.physical.device,
-            &params.vkc.device.physical.memoryProperties);
+            vkc.device.physical.device, &vkc.device.physical.memoryProperties);
 
         return true;
     };
@@ -327,8 +315,8 @@ void createDevice(Params &params) {
 
     LOG("=Create logical device=");
     std::vector<VkDeviceQueueCreateInfo> qcis;
-    std::set<int> uniQueue = {params.vkc.device.physical.graphicsFamily,
-                              params.vkc.device.physical.presentFamily};
+    std::set<int> uniQueue = {vkc.device.physical.graphicsFamily,
+                              vkc.device.physical.presentFamily};
 
     float queuePriority = 1.0f;
     for (int qfi : uniQueue) {
@@ -350,52 +338,46 @@ void createDevice(Params &params) {
     deviceCi.pQueueCreateInfos = qcis.data();
     deviceCi.queueCreateInfoCount = static_cast<uint32_t>(qcis.size());
     deviceCi.pEnabledFeatures = &deviceFeatures;
-    deviceCi.enabledExtensionCount = static_cast<uint32_t>(
-        params.vkc.device.physical.requiredExtensions.size());
+    deviceCi.enabledExtensionCount =
+        static_cast<uint32_t>(vkc.device.physical.requiredExtensions.size());
     deviceCi.ppEnabledExtensionNames =
-        params.vkc.device.physical.requiredExtensions.data();
+        vkc.device.physical.requiredExtensions.data();
     deviceCi.enabledLayerCount =
-        static_cast<uint32_t>(params.vkc.validationLayers.size());
-    deviceCi.ppEnabledLayerNames = params.vkc.validationLayers.data();
+        static_cast<uint32_t>(vkc.validationLayers.size());
+    deviceCi.ppEnabledLayerNames = vkc.validationLayers.data();
 
-    VK_CHECK(vkCreateDevice(params.vkc.device.physical.device, &deviceCi,
-                            params.vkc.allocator, &params.vkc.device.logical));
+    VK_CHECK(vkCreateDevice(vkc.device.physical.device, &deviceCi,
+                            vkc.allocator, &vkc.device.logical));
 
-    vkGetDeviceQueue(params.vkc.device.logical,
-                     params.vkc.device.physical.graphicsFamily, 0,
-                     &params.vkc.device.graphicsQueue);
-    vkGetDeviceQueue(params.vkc.device.logical,
-                     params.vkc.device.physical.presentFamily, 0,
-                     &params.vkc.device.presentQueue);
+    vkGetDeviceQueue(vkc.device.logical, vkc.device.physical.graphicsFamily, 0,
+                     &vkc.device.graphicsQueue);
+    vkGetDeviceQueue(vkc.device.logical, vkc.device.physical.presentFamily, 0,
+                     &vkc.device.presentQueue);
 
     VkCommandPoolCreateInfo cpci = {};
     cpci.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    cpci.queueFamilyIndex = params.vkc.device.physical.graphicsFamily;
+    cpci.queueFamilyIndex = vkc.device.physical.graphicsFamily;
     cpci.flags = 0;
 
     LOG("=Create command pool=");
-    VK_CHECK(vkCreateCommandPool(params.vkc.device.logical, &cpci,
-                                 params.vkc.allocator,
-                                 &params.vkc.device.commandPool));
+    VK_CHECK(vkCreateCommandPool(vkc.device.logical, &cpci, vkc.allocator,
+                                 &vkc.device.commandPool));
 }
 
-void pickSwapchainFormats(Params &params) {
+void pickSwapchainFormats(VulkanContext &vkc, Log &log) {
     LOG("=Choose swapchain formats=");
-    params.vkc.swapchain.surfaceFormat =
-        params.vkc.device.physical.surfaceFormats[0];
+    vkc.swapchain.surfaceFormat = vkc.device.physical.surfaceFormats[0];
 
-    if (params.vkc.device.physical.surfaceFormats.size() == 1 &&
-        params.vkc.device.physical.surfaceFormats[0].format ==
-            VK_FORMAT_UNDEFINED)
-        params.vkc.swapchain.surfaceFormat = {
-            VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
+    if (vkc.device.physical.surfaceFormats.size() == 1 &&
+        vkc.device.physical.surfaceFormats[0].format == VK_FORMAT_UNDEFINED)
+        vkc.swapchain.surfaceFormat = {VK_FORMAT_B8G8R8A8_UNORM,
+                                       VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
     else {
-        for (const auto &availableFormat :
-             params.vkc.device.physical.surfaceFormats) {
+        for (const auto &availableFormat : vkc.device.physical.surfaceFormats) {
             if (availableFormat.format == VK_FORMAT_B8G8R8A8_UNORM &&
                 availableFormat.colorSpace ==
                     VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-                params.vkc.swapchain.surfaceFormat = availableFormat;
+                vkc.swapchain.surfaceFormat = availableFormat;
                 break;
             }
         }
@@ -409,29 +391,28 @@ void pickSwapchainFormats(Params &params) {
 
     for (auto &format : candidates) {
         VkFormatProperties props = {};
-        vkGetPhysicalDeviceFormatProperties(params.vkc.device.physical.device,
-                                            format, &props);
+        vkGetPhysicalDeviceFormatProperties(vkc.device.physical.device, format,
+                                            &props);
 
         if ((props.optimalTilingFeatures & features) == features) {
-            params.vkc.swapchain.depthFormat = format;
+            vkc.swapchain.depthFormat = format;
             break;
         }
     }
 
-    ABORT_IF(params.vkc.swapchain.depthFormat == VK_FORMAT_UNDEFINED,
+    THROW_IF(vkc.swapchain.depthFormat == VK_FORMAT_UNDEFINED,
              "Failed to find a supported format!");
 }
 
-void createRenderPass(Params &params) {
+void createRenderPass(VulkanContext &vkc, Log &log, bool recycle) {
     LOG("=Create render pass=");
-    if (params.recreateSwapchain) {
-        vkDestroyRenderPass(params.vkc.device.logical, params.vkc.renderPass,
-                            params.vkc.allocator);
-        params.vkc.renderPass = VK_NULL_HANDLE;
+    if (recycle) {
+        vkDestroyRenderPass(vkc.device.logical, vkc.renderPass, vkc.allocator);
+        vkc.renderPass = VK_NULL_HANDLE;
     }
     VkAttachmentDescription colorAttchDes = {};
     colorAttchDes.flags = 0;
-    colorAttchDes.format = params.vkc.swapchain.surfaceFormat.format;
+    colorAttchDes.format = vkc.swapchain.surfaceFormat.format;
     colorAttchDes.samples = VK_SAMPLE_COUNT_1_BIT;
     colorAttchDes.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     colorAttchDes.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -442,7 +423,7 @@ void createRenderPass(Params &params) {
 
     VkAttachmentDescription depthAttchDes = {};
     depthAttchDes.flags = 0;
-    depthAttchDes.format = params.vkc.swapchain.depthFormat;
+    depthAttchDes.format = vkc.swapchain.depthFormat;
     depthAttchDes.samples = VK_SAMPLE_COUNT_1_BIT;
     depthAttchDes.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     depthAttchDes.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -487,70 +468,67 @@ void createRenderPass(Params &params) {
     renderPassCi.dependencyCount = 1;
     renderPassCi.pDependencies = &dependency;
 
-    VK_CHECK(vkCreateRenderPass(params.vkc.device.logical, &renderPassCi,
-                                params.vkc.allocator, &params.vkc.renderPass));
+    VK_CHECK(vkCreateRenderPass(vkc.device.logical, &renderPassCi,
+                                vkc.allocator, &vkc.renderPass));
 }
 
-void createSwapchain(Params &params) {
+void createSwapchain(VulkanContext &vkc, Log &log, uint32_t ww, uint32_t wh,
+                     bool recycle) {
     LOG("=Create swap chain=");
     VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
-    for (const auto &availablePresentMode :
-         params.vkc.device.physical.presentModes) {
+    for (const auto &availablePresentMode : vkc.device.physical.presentModes) {
         if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
             presentMode = availablePresentMode;
             break;
         }
     }
 
-    if (params.vkc.device.physical.surfaceCapabilities.currentExtent.width !=
+    if (vkc.device.physical.surfaceCapabilities.currentExtent.width !=
             0xFFFFFFFF &&
-        params.vkc.device.physical.surfaceCapabilities.currentExtent.height !=
+        vkc.device.physical.surfaceCapabilities.currentExtent.height !=
             0xFFFFFFFF) {
-        params.vkc.swapchain.extent =
-            params.vkc.device.physical.surfaceCapabilities.currentExtent;
+        vkc.swapchain.extent =
+            vkc.device.physical.surfaceCapabilities.currentExtent;
     } else {
-        VkExtent2D actualExtent = {params.windowWidth, params.windowHeight};
+        VkExtent2D actualExtent = {ww, wh};
 
         actualExtent.width = std::max(
-            params.vkc.device.physical.surfaceCapabilities.minImageExtent.width,
-            std::min(params.vkc.device.physical.surfaceCapabilities
-                         .maxImageExtent.width,
-                     actualExtent.width));
+            vkc.device.physical.surfaceCapabilities.minImageExtent.width,
+            std::min(
+                vkc.device.physical.surfaceCapabilities.maxImageExtent.width,
+                actualExtent.width));
 
-        actualExtent.height =
-            std::max(params.vkc.device.physical.surfaceCapabilities
-                         .minImageExtent.height,
-                     std::min(params.vkc.device.physical.surfaceCapabilities
-                                  .maxImageExtent.height,
-                              actualExtent.height));
+        actualExtent.height = std::max(
+            vkc.device.physical.surfaceCapabilities.minImageExtent.height,
+            std::min(
+                vkc.device.physical.surfaceCapabilities.maxImageExtent.height,
+                actualExtent.height));
 
-        params.vkc.swapchain.extent = actualExtent;
+        vkc.swapchain.extent = actualExtent;
     }
 
     uint32_t imageCount =
-        params.vkc.device.physical.surfaceCapabilities.minImageCount + 1;
-    if (params.vkc.device.physical.surfaceCapabilities.maxImageCount > 0 &&
-        imageCount >
-            params.vkc.device.physical.surfaceCapabilities.maxImageCount) {
-        imageCount =
-            params.vkc.device.physical.surfaceCapabilities.maxImageCount;
+        vkc.device.physical.surfaceCapabilities.minImageCount + 1;
+    if (vkc.device.physical.surfaceCapabilities.maxImageCount > 0 &&
+        imageCount > vkc.device.physical.surfaceCapabilities.maxImageCount) {
+        imageCount = vkc.device.physical.surfaceCapabilities.maxImageCount;
     }
 
     VkSwapchainCreateInfoKHR swapchainCi = {};
     swapchainCi.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    swapchainCi.surface = params.vkc.surface;
+    swapchainCi.surface = vkc.surface;
     swapchainCi.minImageCount = imageCount;
-    swapchainCi.imageFormat = params.vkc.swapchain.surfaceFormat.format;
-    swapchainCi.imageColorSpace = params.vkc.swapchain.surfaceFormat.colorSpace;
-    swapchainCi.imageExtent = params.vkc.swapchain.extent;
+    swapchainCi.imageFormat = vkc.swapchain.surfaceFormat.format;
+    swapchainCi.imageColorSpace = vkc.swapchain.surfaceFormat.colorSpace;
+    swapchainCi.imageExtent = vkc.swapchain.extent;
     swapchainCi.imageArrayLayers = 1;
     swapchainCi.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
-    if (params.vkc.device.physical.graphicsFamily !=
-        params.vkc.device.physical.presentFamily) {
+    if (vkc.device.physical.graphicsFamily !=
+        vkc.device.physical.presentFamily) {
         const uint32_t queueFamilyIndices[] = {
-            (uint32_t)params.vkc.device.physical.graphicsFamily,
-            (uint32_t)params.vkc.device.physical.presentFamily};
+            (uint32_t)vkc.device.physical.graphicsFamily,
+            (uint32_t)vkc.device.physical.presentFamily};
 
         swapchainCi.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
         swapchainCi.queueFamilyIndexCount = 2;
@@ -559,69 +537,62 @@ void createSwapchain(Params &params) {
         swapchainCi.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
     swapchainCi.preTransform =
-        params.vkc.device.physical.surfaceCapabilities.currentTransform;
+        vkc.device.physical.surfaceCapabilities.currentTransform;
     swapchainCi.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     swapchainCi.presentMode = presentMode;
     swapchainCi.clipped = VK_TRUE;
 
-    VkSwapchainKHR oldChain = params.vkc.swapchain.chain;
+    VkSwapchainKHR oldChain = vkc.swapchain.chain;
     swapchainCi.oldSwapchain = oldChain;
 
     VkSwapchainKHR newChain = VK_NULL_HANDLE;
-    VK_CHECK(vkCreateSwapchainKHR(params.vkc.device.logical, &swapchainCi,
-                                  params.vkc.allocator, &newChain));
-    params.vkc.swapchain.chain = newChain;
+    VK_CHECK(vkCreateSwapchainKHR(vkc.device.logical, &swapchainCi,
+                                  vkc.allocator, &newChain));
+    vkc.swapchain.chain = newChain;
 
-    if (params.recreateSwapchain) {
+    if (recycle) {
         for (uint32_t i = 0;
-             i < static_cast<uint32_t>(params.vkc.swapchain.images.size());
-             ++i) {
-            vkDestroyImageView(params.vkc.device.logical,
-                               params.vkc.swapchain.imageViews[i],
-                               params.vkc.allocator);
-            vkDestroyFramebuffer(params.vkc.device.logical,
-                                 params.vkc.swapchain.framebuffers[i],
-                                 params.vkc.allocator);
+             i < static_cast<uint32_t>(vkc.swapchain.images.size()); ++i) {
+            vkDestroyImageView(vkc.device.logical, vkc.swapchain.imageViews[i],
+                               vkc.allocator);
+            vkDestroyFramebuffer(vkc.device.logical,
+                                 vkc.swapchain.framebuffers[i], vkc.allocator);
         }
 
-        vkDestroySwapchainKHR(params.vkc.device.logical, oldChain,
-                              params.vkc.allocator);
+        vkDestroySwapchainKHR(vkc.device.logical, oldChain, vkc.allocator);
 
-        params.vkc.swapchain.images.clear();
-        params.vkc.swapchain.imageViews.clear();
-        params.vkc.swapchain.framebuffers.clear();
+        vkc.swapchain.images.clear();
+        vkc.swapchain.imageViews.clear();
+        vkc.swapchain.framebuffers.clear();
 
-        vkDestroyImageView(params.vkc.device.logical,
-                           params.vkc.swapchain.depthImageView,
-                           params.vkc.allocator);
-        params.vkc.swapchain.depthImageView = VK_NULL_HANDLE;
+        vkDestroyImageView(vkc.device.logical, vkc.swapchain.depthImageView,
+                           vkc.allocator);
+        vkc.swapchain.depthImageView = VK_NULL_HANDLE;
 
-        vkDestroyImage(params.vkc.device.logical,
-                       params.vkc.swapchain.depthImage, params.vkc.allocator);
-        params.vkc.swapchain.depthImage = VK_NULL_HANDLE;
+        vkDestroyImage(vkc.device.logical, vkc.swapchain.depthImage,
+                       vkc.allocator);
+        vkc.swapchain.depthImage = VK_NULL_HANDLE;
 
-        vkFreeMemory(params.vkc.device.logical,
-                     params.vkc.swapchain.depthImageMemory,
-                     params.vkc.allocator);
-        params.vkc.swapchain.depthImageMemory = VK_NULL_HANDLE;
+        vkFreeMemory(vkc.device.logical, vkc.swapchain.depthImageMemory,
+                     vkc.allocator);
+        vkc.swapchain.depthImageMemory = VK_NULL_HANDLE;
     }
 
     // Get images
     imageCount = 0;
-    vkGetSwapchainImagesKHR(params.vkc.device.logical,
-                            params.vkc.swapchain.chain, &imageCount, nullptr);
-    params.vkc.swapchain.images.resize(imageCount);
-    vkGetSwapchainImagesKHR(params.vkc.device.logical,
-                            params.vkc.swapchain.chain, &imageCount,
-                            params.vkc.swapchain.images.data());
+    vkGetSwapchainImagesKHR(vkc.device.logical, vkc.swapchain.chain,
+                            &imageCount, nullptr);
+    vkc.swapchain.images.resize(imageCount);
+    vkGetSwapchainImagesKHR(vkc.device.logical, vkc.swapchain.chain,
+                            &imageCount, vkc.swapchain.images.data());
 
     // Create image views
-    params.vkc.swapchain.imageViews.resize(imageCount);
+    vkc.swapchain.imageViews.resize(imageCount);
 
     VkImageViewCreateInfo imageViewCi = {};
     imageViewCi.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     imageViewCi.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    imageViewCi.format = params.vkc.swapchain.surfaceFormat.format;
+    imageViewCi.format = vkc.swapchain.surfaceFormat.format;
     imageViewCi.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     imageViewCi.subresourceRange.baseMipLevel = 0;
     imageViewCi.subresourceRange.levelCount = 1;
@@ -629,63 +600,60 @@ void createSwapchain(Params &params) {
     imageViewCi.subresourceRange.layerCount = 1;
 
     for (uint32_t i = 0; i < imageCount; ++i) {
-        imageViewCi.image = params.vkc.swapchain.images[i];
-        VK_CHECK(vkCreateImageView(params.vkc.device.logical, &imageViewCi,
-                                   params.vkc.allocator,
-                                   &params.vkc.swapchain.imageViews[i]));
+        imageViewCi.image = vkc.swapchain.images[i];
+        VK_CHECK(vkCreateImageView(vkc.device.logical, &imageViewCi,
+                                   vkc.allocator,
+                                   &vkc.swapchain.imageViews[i]));
     }
 
     // Depth
-    createImage(
-        params, params.vkc.swapchain.extent.width,
-        params.vkc.swapchain.extent.height, 1, params.vkc.swapchain.depthFormat,
-        VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, params.vkc.swapchain.depthImage,
-        params.vkc.swapchain.depthImageMemory);
+    createImage(vkc, log, vkc.swapchain.extent.width,
+                vkc.swapchain.extent.height, 1, vkc.swapchain.depthFormat,
+                VK_IMAGE_TILING_OPTIMAL,
+                VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vkc.swapchain.depthImage,
+                vkc.swapchain.depthImageMemory);
 
     imageViewCi = {};
     imageViewCi.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    imageViewCi.image = params.vkc.swapchain.depthImage;
+    imageViewCi.image = vkc.swapchain.depthImage;
     imageViewCi.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    imageViewCi.format = params.vkc.swapchain.depthFormat;
+    imageViewCi.format = vkc.swapchain.depthFormat;
     imageViewCi.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
     imageViewCi.subresourceRange.baseMipLevel = 0;
     imageViewCi.subresourceRange.levelCount = 1;
     imageViewCi.subresourceRange.baseArrayLayer = 0;
     imageViewCi.subresourceRange.layerCount = 1;
 
-    VK_CHECK(vkCreateImageView(params.vkc.device.logical, &imageViewCi,
-                               params.vkc.allocator,
-                               &params.vkc.swapchain.depthImageView));
+    VK_CHECK(vkCreateImageView(vkc.device.logical, &imageViewCi, vkc.allocator,
+                               &vkc.swapchain.depthImageView));
 
-    transitionImageLayout(params, params.vkc.swapchain.depthImage,
-                          params.vkc.swapchain.depthFormat,
-                          VK_IMAGE_LAYOUT_UNDEFINED,
+    transitionImageLayout(vkc, log, vkc.swapchain.depthImage,
+                          vkc.swapchain.depthFormat, VK_IMAGE_LAYOUT_UNDEFINED,
                           VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
     // Framebuffers
     VkFramebufferCreateInfo framebufferCi = {};
     framebufferCi.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    framebufferCi.renderPass = params.vkc.renderPass;
-    framebufferCi.width = params.vkc.swapchain.extent.width;
-    framebufferCi.height = params.vkc.swapchain.extent.height;
+    framebufferCi.renderPass = vkc.renderPass;
+    framebufferCi.width = vkc.swapchain.extent.width;
+    framebufferCi.height = vkc.swapchain.extent.height;
     framebufferCi.layers = 1;
     framebufferCi.attachmentCount = 2;
 
-    params.vkc.swapchain.framebuffers.resize(
-        params.vkc.swapchain.images.size());
-    for (size_t i = 0; i < params.vkc.swapchain.framebuffers.size(); i++) {
-        const VkImageView attachments[] = {params.vkc.swapchain.imageViews[i],
-                                           params.vkc.swapchain.depthImageView};
+    vkc.swapchain.framebuffers.resize(vkc.swapchain.images.size());
+    for (size_t i = 0; i < vkc.swapchain.framebuffers.size(); i++) {
+        const VkImageView attachments[] = {vkc.swapchain.imageViews[i],
+                                           vkc.swapchain.depthImageView};
         framebufferCi.pAttachments = attachments;
 
-        VK_CHECK(vkCreateFramebuffer(params.vkc.device.logical, &framebufferCi,
-                                     params.vkc.allocator,
-                                     &params.vkc.swapchain.framebuffers[i]));
+        VK_CHECK(vkCreateFramebuffer(vkc.device.logical, &framebufferCi,
+                                     vkc.allocator,
+                                     &vkc.swapchain.framebuffers[i]));
     }
 }
 
-void createTexturSampler(Params &params) {
+void createTexturSampler(VulkanContext &vkc, Log &log) {
     LOG("=Create texture sampler=");
     VkSamplerCreateInfo info = {};
     info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -705,11 +673,11 @@ void createTexturSampler(Params &params) {
     info.minLod = 0.0f;
     info.maxLod = 0.0f;
 
-    VK_CHECK(vkCreateSampler(params.vkc.device.logical, &info,
-                             params.vkc.allocator, &params.vkc.textureSampler));
+    VK_CHECK(vkCreateSampler(vkc.device.logical, &info, vkc.allocator,
+                             &vkc.textureSampler));
 }
 
-void createImage(Params &params, uint32_t width, uint32_t height,
+void createImage(VulkanContext &vkc, Log &log, uint32_t width, uint32_t height,
                  uint32_t depth, VkFormat format, VkImageTiling tiling,
                  VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
                  VkImage &image, VkDeviceMemory &imageMemory) {
@@ -727,46 +695,44 @@ void createImage(Params &params, uint32_t width, uint32_t height,
     imageInfo.usage = usage;
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    VK_CHECK(vkCreateImage(params.vkc.device.logical, &imageInfo,
-                           params.vkc.allocator, &image));
+    VK_CHECK(
+        vkCreateImage(vkc.device.logical, &imageInfo, vkc.allocator, &image));
 
     VkMemoryRequirements memRequirements;
-    vkGetImageMemoryRequirements(params.vkc.device.logical, image,
-                                 &memRequirements);
+    vkGetImageMemoryRequirements(vkc.device.logical, image, &memRequirements);
 
     VkMemoryAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocInfo.allocationSize = memRequirements.size;
     allocInfo.memoryTypeIndex =
-        findMemoryType(params, memRequirements.memoryTypeBits, properties);
+        findMemoryType(vkc, log, memRequirements.memoryTypeBits, properties);
 
-    VK_CHECK(vkAllocateMemory(params.vkc.device.logical, &allocInfo, nullptr,
+    VK_CHECK(vkAllocateMemory(vkc.device.logical, &allocInfo, nullptr,
                               &imageMemory));
 
-    VK_CHECK(
-        vkBindImageMemory(params.vkc.device.logical, image, imageMemory, 0));
+    VK_CHECK(vkBindImageMemory(vkc.device.logical, image, imageMemory, 0));
 }
 
-uint32_t findMemoryType(Params &params, uint32_t typeFilter,
+uint32_t findMemoryType(VulkanContext &vkc, Log &log, uint32_t typeFilter,
                         VkMemoryPropertyFlags properties) {
     for (uint32_t i = 0;
-         i < params.vkc.device.physical.memoryProperties.memoryTypeCount; i++) {
+         i < vkc.device.physical.memoryProperties.memoryTypeCount; i++) {
         if (typeFilter & (1 << i) &&
-            (params.vkc.device.physical.memoryProperties.memoryTypes[i]
-                 .propertyFlags &
+            (vkc.device.physical.memoryProperties.memoryTypes[i].propertyFlags &
              properties) == properties) {
             return i;
         }
     }
 
-    ABORT_IF(true, "Failed to find suitable memory type!");
+    THROW_IF(true, "Failed to find suitable memory type!");
 
     return ~0u;
 }
 
-void transitionImageLayout(Params &params, VkImage image, VkFormat format,
-                           VkImageLayout oldLayout, VkImageLayout newLayout) {
-    VkCommandBuffer commandBuffer = beginSingleTimeCommands(params);
+void transitionImageLayout(VulkanContext &vkc, Log &log, VkImage image,
+                           VkFormat format, VkImageLayout oldLayout,
+                           VkImageLayout newLayout) {
+    VkCommandBuffer commandBuffer = beginSingleTimeCommands(vkc, log);
 
     VkImageMemoryBarrier barrier = {};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -815,24 +781,24 @@ void transitionImageLayout(Params &params, VkImage image, VkFormat format,
         sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     } else {
-        ABORT_IF(true, "Unsupported layout transition!");
+        THROW_IF(true, "Unsupported layout transition!");
     }
 
     vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0,
                          nullptr, 0, nullptr, 1, &barrier);
 
-    endSingleTimeCommands(params, commandBuffer);
+    endSingleTimeCommands(vkc, log, commandBuffer);
 }
 
-VkCommandBuffer beginSingleTimeCommands(Params &params) {
+VkCommandBuffer beginSingleTimeCommands(VulkanContext &vkc, Log &log) {
     VkCommandBufferAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandPool = params.vkc.device.commandPool;
+    allocInfo.commandPool = vkc.device.commandPool;
     allocInfo.commandBufferCount = 1;
 
     VkCommandBuffer commandBuffer;
-    VK_CHECK(vkAllocateCommandBuffers(params.vkc.device.logical, &allocInfo,
+    VK_CHECK(vkAllocateCommandBuffers(vkc.device.logical, &allocInfo,
                                       &commandBuffer));
 
     VkCommandBufferBeginInfo beginInfo = {};
@@ -844,7 +810,8 @@ VkCommandBuffer beginSingleTimeCommands(Params &params) {
     return commandBuffer;
 }
 
-void endSingleTimeCommands(Params &params, VkCommandBuffer commandBuffer) {
+void endSingleTimeCommands(VulkanContext &vkc, Log &log,
+                           VkCommandBuffer commandBuffer) {
     if (commandBuffer != VK_NULL_HANDLE) {
         VK_CHECK(vkEndCommandBuffer(commandBuffer));
 
@@ -853,136 +820,129 @@ void endSingleTimeCommands(Params &params, VkCommandBuffer commandBuffer) {
         submitInfo.commandBufferCount = 1;
         submitInfo.pCommandBuffers = &commandBuffer;
 
-        VK_CHECK(vkQueueSubmit(params.vkc.device.graphicsQueue, 1, &submitInfo,
+        VK_CHECK(vkQueueSubmit(vkc.device.graphicsQueue, 1, &submitInfo,
                                VK_NULL_HANDLE));
-        VK_CHECK(vkQueueWaitIdle(params.vkc.device.graphicsQueue));
+        VK_CHECK(vkQueueWaitIdle(vkc.device.graphicsQueue));
 
-        vkFreeCommandBuffers(params.vkc.device.logical,
-                             params.vkc.device.commandPool, 1, &commandBuffer);
+        vkFreeCommandBuffers(vkc.device.logical, vkc.device.commandPool, 1,
+                             &commandBuffer);
     }
 }
 
-void init(Params &params) {
-    initGLFW(params);
-    createInstance(params);
+void init(VulkanContext &vkc, Log &log, GLFWwindow **window, uint32_t ww,
+          uint32_t wh) {
+    initGLFW(window, ww, wh, log);
+    createInstance(vkc, log);
     LOG("=Create surface=");
-    VK_CHECK(glfwCreateWindowSurface(params.vkc.instance, params.window,
-                                     params.vkc.allocator,
-                                     &params.vkc.surface));
-    createDevice(params);
-    pickSwapchainFormats(params);
-    createRenderPass(params);
-    createSwapchain(params);
-    createTexturSampler(params);
+    VK_CHECK(glfwCreateWindowSurface(vkc.instance, *window, vkc.allocator,
+                                     &vkc.surface));
+    createDevice(vkc, log);
+    pickSwapchainFormats(vkc, log);
+    createRenderPass(vkc, log, false);
+    createSwapchain(vkc, log, ww, wh, false);
+    createTexturSampler(vkc, log);
     LOG("=Create semaphores=");
     VkSemaphoreCreateInfo semaphoreCi = {};
     semaphoreCi.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
-    VK_CHECK(vkCreateSemaphore(params.vkc.device.logical, &semaphoreCi,
-                               params.vkc.allocator,
-                               &params.vkc.imageAvailableSemaphore));
-    VK_CHECK(vkCreateSemaphore(params.vkc.device.logical, &semaphoreCi,
-                               params.vkc.allocator,
-                               &params.vkc.renderFinishedSemaphore));
+    VK_CHECK(vkCreateSemaphore(vkc.device.logical, &semaphoreCi, vkc.allocator,
+                               &vkc.imageAvailableSemaphore));
+    VK_CHECK(vkCreateSemaphore(vkc.device.logical, &semaphoreCi, vkc.allocator,
+                               &vkc.renderFinishedSemaphore));
 }
 
-void terminate(Params &params) {
-    if (params.vkc.device.logical != VK_NULL_HANDLE) {
-        VK_CHECK(vkDeviceWaitIdle(params.vkc.device.logical));
+void terminate(VulkanContext &vkc, Log &log, GLFWwindow *window) {
+    if (vkc.device.logical != VK_NULL_HANDLE) {
+        VK_CHECK(vkDeviceWaitIdle(vkc.device.logical));
     }
 
     LOG("=Destroy semaphores=");
-    vkDestroySemaphore(params.vkc.device.logical,
-                       params.vkc.renderFinishedSemaphore,
-                       params.vkc.allocator);
-    vkDestroySemaphore(params.vkc.device.logical,
-                       params.vkc.imageAvailableSemaphore,
-                       params.vkc.allocator);
+    vkDestroySemaphore(vkc.device.logical, vkc.renderFinishedSemaphore,
+                       vkc.allocator);
+    vkDestroySemaphore(vkc.device.logical, vkc.imageAvailableSemaphore,
+                       vkc.allocator);
 
     LOG("=Destroy texture sampler=");
-    vkDestroySampler(params.vkc.device.logical, params.vkc.textureSampler,
-                     params.vkc.allocator);
+    vkDestroySampler(vkc.device.logical, vkc.textureSampler, vkc.allocator);
 
     LOG("=Destroy swap chain=");
-    vkDestroyImageView(params.vkc.device.logical,
-                       params.vkc.swapchain.depthImageView,
-                       params.vkc.allocator);
-    params.vkc.swapchain.depthImageView = VK_NULL_HANDLE;
+    vkDestroyImageView(vkc.device.logical, vkc.swapchain.depthImageView,
+                       vkc.allocator);
+    vkc.swapchain.depthImageView = VK_NULL_HANDLE;
 
-    vkDestroyImage(params.vkc.device.logical, params.vkc.swapchain.depthImage,
-                   params.vkc.allocator);
-    params.vkc.swapchain.depthImage = VK_NULL_HANDLE;
+    vkDestroyImage(vkc.device.logical, vkc.swapchain.depthImage, vkc.allocator);
+    vkc.swapchain.depthImage = VK_NULL_HANDLE;
 
-    vkFreeMemory(params.vkc.device.logical,
-                 params.vkc.swapchain.depthImageMemory, params.vkc.allocator);
-    params.vkc.swapchain.depthImageMemory = VK_NULL_HANDLE;
+    vkFreeMemory(vkc.device.logical, vkc.swapchain.depthImageMemory,
+                 vkc.allocator);
+    vkc.swapchain.depthImageMemory = VK_NULL_HANDLE;
 
-    for (auto &iv : params.vkc.swapchain.imageViews) {
-        vkDestroyImageView(params.vkc.device.logical, iv, params.vkc.allocator);
+    for (auto &iv : vkc.swapchain.imageViews) {
+        vkDestroyImageView(vkc.device.logical, iv, vkc.allocator);
     }
-    params.vkc.swapchain.imageViews.clear();
+    vkc.swapchain.imageViews.clear();
 
-    for (auto &fb : params.vkc.swapchain.framebuffers) {
-        vkDestroyFramebuffer(params.vkc.device.logical, fb,
-                             params.vkc.allocator);
+    for (auto &fb : vkc.swapchain.framebuffers) {
+        vkDestroyFramebuffer(vkc.device.logical, fb, vkc.allocator);
     }
-    params.vkc.swapchain.framebuffers.clear();
+    vkc.swapchain.framebuffers.clear();
 
-    vkDestroySwapchainKHR(params.vkc.device.logical, params.vkc.swapchain.chain,
-                          params.vkc.allocator);
+    vkDestroySwapchainKHR(vkc.device.logical, vkc.swapchain.chain,
+                          vkc.allocator);
 
     LOG("=Destroy render pass=");
-    vkDestroyRenderPass(params.vkc.device.logical, params.vkc.renderPass,
-                        params.vkc.allocator);
-    params.vkc.renderPass = VK_NULL_HANDLE;
+    vkDestroyRenderPass(vkc.device.logical, vkc.renderPass, vkc.allocator);
+    vkc.renderPass = VK_NULL_HANDLE;
 
     LOG("=Destroy command pool=");
-    vkDestroyCommandPool(params.vkc.device.logical,
-                         params.vkc.device.commandPool, params.vkc.allocator);
-    params.vkc.device.commandPool = VK_NULL_HANDLE;
+    vkDestroyCommandPool(vkc.device.logical, vkc.device.commandPool,
+                         vkc.allocator);
+    vkc.device.commandPool = VK_NULL_HANDLE;
 
     LOG("=Destroy logical device=");
-    vkDestroyDevice(params.vkc.device.logical, params.vkc.allocator);
-    params.vkc.device.logical = VK_NULL_HANDLE;
-    params.vkc.device.graphicsQueue = VK_NULL_HANDLE;
-    params.vkc.device.presentQueue = VK_NULL_HANDLE;
-    params.vkc.device.commandPool = VK_NULL_HANDLE;
-    params.vkc.device.physical.device = VK_NULL_HANDLE;
+    vkDestroyDevice(vkc.device.logical, vkc.allocator);
+    vkc.device.logical = VK_NULL_HANDLE;
+    vkc.device.graphicsQueue = VK_NULL_HANDLE;
+    vkc.device.presentQueue = VK_NULL_HANDLE;
+    vkc.device.commandPool = VK_NULL_HANDLE;
+    vkc.device.physical.device = VK_NULL_HANDLE;
 
     LOG("=Destroy surface=");
-    vkDestroySurfaceKHR(params.vkc.instance, params.vkc.surface,
-                        params.vkc.allocator);
-    params.vkc.surface = VK_NULL_HANDLE;
+    vkDestroySurfaceKHR(vkc.instance, vkc.surface, vkc.allocator);
+    vkc.surface = VK_NULL_HANDLE;
+
+    if (log.fileStream != nullptr) {
+        log.fileStream->flush();
+    }
 
 #ifndef NDEBUG
     LOG("=Destroy debug messenger=");
     auto f = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
-        params.vkc.instance, "vkDestroyDebugUtilsMessengerEXT");
+        vkc.instance, "vkDestroyDebugUtilsMessengerEXT");
     if (f != nullptr) {
-        f(params.vkc.instance, params.vkc.dbgMsgr, params.vkc.allocator);
-        params.vkc.dbgMsgr = VK_NULL_HANDLE;
+        f(vkc.instance, vkc.dbgMsgr, vkc.allocator);
+        vkc.dbgMsgr = VK_NULL_HANDLE;
     }
 #endif
 
     LOG("=Destroy instance=");
-    vkDestroyInstance(params.vkc.instance, params.vkc.allocator);
-    params.vkc.instance = VK_NULL_HANDLE;
+    vkDestroyInstance(vkc.instance, vkc.allocator);
+    vkc.instance = VK_NULL_HANDLE;
 
-    terminateGLFW(params);
+    terminateGLFW(window, log);
 }
 
-void initGLFW(Params &params) {
+void initGLFW(GLFWwindow **window, uint32_t ww, uint32_t wh, Log &log) {
     LOG("=GLFW init=");
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    params.window = glfwCreateWindow(params.windowWidth, params.windowHeight,
-                                     "Vulkan window", nullptr, nullptr);
+    *window = glfwCreateWindow(ww, wh, "Vulkan window", nullptr, nullptr);
 }
 
-void terminateGLFW(Params &params) {
+void terminateGLFW(GLFWwindow *window, Log &log) {
     LOG("=GLFW terminate=");
-    if (params.window != nullptr) {
-        glfwDestroyWindow(params.window);
+    if (window != nullptr) {
+        glfwDestroyWindow(window);
     }
     glfwTerminate();
 }
@@ -990,14 +950,21 @@ void terminateGLFW(Params &params) {
 void run() {
     Params params = {};
 #ifndef NDEBUG
-    params.startingTime = std::chrono::steady_clock::now();
+    params.log.startingTime = std::chrono::steady_clock::now();
 
     std::ofstream fileStream("err.log", std::ios::out);
     if (fileStream.is_open()) {
-        params.fileStream = &fileStream;
+        params.log.fileStream = &fileStream;
     }
 #endif
-    init(params);
-    terminate(params);
+
+    try {
+        init(params.vkc, params.log, &params.window, params.windowWidth,
+             params.windowHeight);
+    } catch (const std::runtime_error &e) {
+        printf("Unhandled exception: %s\n", e.what());
+    }
+
+    terminate(params.vkc, params.log, params.window);
 }
 } // namespace vulkan_proto

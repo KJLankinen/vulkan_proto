@@ -9,17 +9,16 @@
 
 #ifndef NDEBUG
 #define VK_CHECK(call)                                                         \
-    vulkan_proto::checkVulkanCallResult(params, call, #call, __FILE__, __LINE__)
+    vulkan_proto::checkVulkanCallResult(log, call, #call, __FILE__, __LINE__)
 #else
 #define VK_CHECK(call) call
 #endif
 
-#define ABORT_IF(condition, ...)                                               \
-    vulkan_proto::abortIf(params, condition, FORMAT_STR(__VA_ARGS__),          \
-                          __FILE__, __LINE__)
+#define THROW_IF(condition, ...)                                               \
+    vulkan_proto::throwIf(log, condition, FORMAT_STR(__VA_ARGS__), __FILE__,   \
+                          __LINE__)
 
-#define LOG(...)                                                               \
-    vulkan_proto::log(params, params.fileStream, FORMAT_STR(__VA_ARGS__))
+#define LOG(...) vulkan_proto::log(log, log.fileStream, FORMAT_STR(__VA_ARGS__))
 
 namespace vulkan_proto {
 template <typename... Args>
@@ -33,12 +32,12 @@ std::string stringFormat(const char *format, Args... args) {
     return std::string(buf.get(), buf.get() + size - 1);
 }
 
-void formatTimeSinceStart(Params &params) {
-    params.timess.clear();
-    params.timess.str(std::string());
+void formatTimeSinceStart(Log &log) {
+    log.timess.clear();
+    log.timess.str(std::string());
     auto now = std::chrono::steady_clock::now();
     auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
-        now - params.startingTime);
+        now - log.startingTime);
     auto hours = std::chrono::duration_cast<std::chrono::hours>(milliseconds);
     milliseconds -=
         std::chrono::duration_cast<std::chrono::milliseconds>(hours);
@@ -50,67 +49,54 @@ void formatTimeSinceStart(Params &params) {
         std::chrono::duration_cast<std::chrono::seconds>(milliseconds);
     milliseconds -=
         std::chrono::duration_cast<std::chrono::milliseconds>(seconds);
-    params.timess << "[";
+    log.timess << "[";
     if (hours.count() < 10) {
-        params.timess << "0";
+        log.timess << "0";
     }
-    params.timess << hours.count() << ":";
+    log.timess << hours.count() << ":";
 
     if (minutes.count() < 10) {
-        params.timess << "0";
+        log.timess << "0";
     }
-    params.timess << minutes.count() << ":";
+    log.timess << minutes.count() << ":";
 
     if (seconds.count() < 10) {
-        params.timess << "0";
+        log.timess << "0";
     }
-    params.timess << seconds.count() << ":";
+    log.timess << seconds.count() << ":";
 
     if (milliseconds.count() < 100) {
-        params.timess << "0";
+        log.timess << "0";
     }
     if (milliseconds.count() < 10) {
-        params.timess << "0";
+        log.timess << "0";
     }
-    params.timess << milliseconds.count() << "]";
+    log.timess << milliseconds.count() << "]";
 }
 
-inline void log(Params &params, std::ofstream *fileStream, std::string msg) {
+inline void log(Log &log, std::ofstream *fileStream, std::string msg) {
 #ifndef NDEBUG
-    formatTimeSinceStart(params);
+    formatTimeSinceStart(log);
     if (fileStream != nullptr) {
-        *fileStream << params.timess.str().c_str() << " " << msg.c_str()
+        *fileStream << log.timess.str().c_str() << " " << msg.c_str()
                     << std::endl;
     }
-    std::cout << params.timess.str().c_str() << " " << msg.c_str() << std::endl;
+    std::cout << log.timess.str().c_str() << " " << msg.c_str() << std::endl;
 #endif
 }
 
-void terminate(Params &params);
-inline void abort(Params &params, const char *msg) {
-    LOG(msg);
-    LOG("Aborting");
-    terminate(params);
-
-    if (params.fileStream != nullptr) {
-        params.fileStream->flush();
-    }
-
-    exit(EXIT_FAILURE);
-}
-
-inline void abortIf(Params &params, bool condition, std::string msg,
+inline void throwIf(Log &log, bool condition, std::string msg,
                     const char *fileName, int line) {
     if (condition) {
-        abort(params,
-              FORMAT_STR("'%s' at %s:%d", msg.c_str(), fileName, line).c_str());
+        throw std::runtime_error(
+            FORMAT_STR("'%s' at %s:%d.", msg.c_str(), fileName, line).c_str());
     }
 }
 
-inline void checkVulkanCallResult(Params &params, VkResult result,
+inline void checkVulkanCallResult(Log &log, VkResult result,
                                   const char *callStr, const char *fileName,
                                   int line) {
-    abortIf(params, VK_SUCCESS != result,
+    throwIf(log, VK_SUCCESS != result,
             FORMAT_STR("Vulkan error '%d':\n%s", result, callStr), fileName,
             line);
 }

@@ -13,24 +13,28 @@
 
 namespace vulkan_proto {
 
-void init(Params &params);
-void initGLFW(Params &params);
-void createInstance(Params &params);
-void createDevice(Params &params);
-void createRenderPass(Params &params);
-void createSwapchain(Params &params);
-void pickSwapchainFormats(Params &params);
-void createImage(Params &params, uint32_t width, uint32_t height,
+void init(VulkanContext &vkc, Log &log, GLFWwindow **window, uint32_t ww,
+          uint32_t wh);
+void initGLFW(GLFWwindow **window, uint32_t ww, uint32_t wh, Log &log);
+void createInstance(VulkanContext &vkc, Log &log);
+void createDevice(VulkanContext &vkc, Log &log);
+void createRenderPass(VulkanContext &vkc, Log &log, bool recycle);
+void createSwapchain(VulkanContext &vkc, Log &log, uint32_t ww, uint32_t wh,
+                     bool recycle);
+void pickSwapchainFormats(VulkanContext &vkc, Log &log);
+void createImage(VulkanContext &vkc, Log &log, uint32_t width, uint32_t height,
                  uint32_t depth, VkFormat format, VkImageTiling tiling,
                  VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
                  VkImage &image, VkDeviceMemory &imageMemory);
-uint32_t findMemoryType(Params &params, uint32_t typeFilter,
+uint32_t findMemoryType(VulkanContext &vkc, Log &log, uint32_t typeFilter,
                         VkMemoryPropertyFlags properties);
-void transitionImageLayout(Params &params, VkImage image, VkFormat format,
-                           VkImageLayout oldLayout, VkImageLayout newLayout);
-VkCommandBuffer beginSingleTimeCommands(Params &params);
-void endSingleTimeCommands(Params &params, VkCommandBuffer commandBuffer);
+void transitionImageLayout(VulkanContext &vkc, Log &log, VkImage image,
+                           VkFormat format, VkImageLayout oldLayout,
+                           VkImageLayout newLayout);
+VkCommandBuffer beginSingleTimeCommands(VulkanContext &vkc, Log &log);
+void endSingleTimeCommands(VulkanContext &vkc, Log &log,
+                           VkCommandBuffer commandBuffer);
 void run();
-void terminate(Params &params);
-void terminateGLFW(Params &params);
+void terminate(VulkanContext &vkc, Log &log, GLFWwindow *window);
+void terminateGLFW(GLFWwindow *window, Log &log);
 } // namespace vulkan_proto
