@@ -5,8 +5,7 @@ void run();
 }
 
 int main(int argc, char **argv) {
-  printf("Hello world!\n");
   vulkan_proto::run();
 
-  return 0;
+  return EXIT_SUCCESS;
 }
