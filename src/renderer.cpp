@@ -93,8 +93,8 @@ void createInstance(Params &params) {
     instanceCi.enabledExtensionCount = extensions.size();
     instanceCi.ppEnabledExtensionNames = extensions.data();
 
-    VK_CHECK(
-        vkCreateInstance(&instanceCi, params.allocator, &params.vkc.instance));
+    VK_CHECK(vkCreateInstance(&instanceCi, params.vkc.allocator,
+                              &params.vkc.instance));
 
 #ifndef NDEBUG
     LOG("=Create debug messenger=");
@@ -102,7 +102,7 @@ void createInstance(Params &params) {
         params.vkc.instance, "vkCreateDebugUtilsMessengerEXT");
     ABORT_IF(f == nullptr,
              "PFN_vkCreateDebugUtilsMessengerEXT returned nullptr");
-    VK_CHECK(f(params.vkc.instance, &dbgMsgrCi, params.allocator,
+    VK_CHECK(f(params.vkc.instance, &dbgMsgrCi, params.vkc.allocator,
                &params.vkc.dbgMsgr));
 #endif
 }
@@ -359,7 +359,7 @@ void createDevice(Params &params) {
     deviceCi.ppEnabledLayerNames = params.vkc.validationLayers.data();
 
     VK_CHECK(vkCreateDevice(params.vkc.device.physical.device, &deviceCi,
-                            params.allocator, &params.vkc.device.logical));
+                            params.vkc.allocator, &params.vkc.device.logical));
 
     vkGetDeviceQueue(params.vkc.device.logical,
                      params.vkc.device.physical.graphicsFamily, 0,
@@ -375,7 +375,7 @@ void createDevice(Params &params) {
 
     LOG("=Create command pool=");
     VK_CHECK(vkCreateCommandPool(params.vkc.device.logical, &cpci,
-                                 params.allocator,
+                                 params.vkc.allocator,
                                  &params.vkc.device.commandPool));
 }
 
@@ -424,6 +424,11 @@ void pickSwapchainFormats(Params &params) {
 
 void createRenderPass(Params &params) {
     LOG("=Create render pass=");
+    if (params.recreateSwapchain) {
+        vkDestroyRenderPass(params.vkc.device.logical, params.vkc.renderPass,
+                            params.vkc.allocator);
+        params.vkc.renderPass = VK_NULL_HANDLE;
+    }
     VkAttachmentDescription colorAttchDes = {};
     colorAttchDes.flags = 0;
     colorAttchDes.format = params.vkc.swapchain.surfaceFormat.format;
@@ -483,7 +488,7 @@ void createRenderPass(Params &params) {
     renderPassCi.pDependencies = &dependency;
 
     VK_CHECK(vkCreateRenderPass(params.vkc.device.logical, &renderPassCi,
-                                params.allocator, &params.vkc.renderPass));
+                                params.vkc.allocator, &params.vkc.renderPass));
 }
 
 void createSwapchain(Params &params) {
@@ -564,7 +569,7 @@ void createSwapchain(Params &params) {
 
     VkSwapchainKHR newChain = VK_NULL_HANDLE;
     VK_CHECK(vkCreateSwapchainKHR(params.vkc.device.logical, &swapchainCi,
-                                  params.allocator, &newChain));
+                                  params.vkc.allocator, &newChain));
     params.vkc.swapchain.chain = newChain;
 
     if (params.recreateSwapchain) {
@@ -573,14 +578,14 @@ void createSwapchain(Params &params) {
              ++i) {
             vkDestroyImageView(params.vkc.device.logical,
                                params.vkc.swapchain.imageViews[i],
-                               params.allocator);
+                               params.vkc.allocator);
             vkDestroyFramebuffer(params.vkc.device.logical,
                                  params.vkc.swapchain.framebuffers[i],
-                                 params.allocator);
+                                 params.vkc.allocator);
         }
 
         vkDestroySwapchainKHR(params.vkc.device.logical, oldChain,
-                              params.allocator);
+                              params.vkc.allocator);
 
         params.vkc.swapchain.images.clear();
         params.vkc.swapchain.imageViews.clear();
@@ -588,15 +593,16 @@ void createSwapchain(Params &params) {
 
         vkDestroyImageView(params.vkc.device.logical,
                            params.vkc.swapchain.depthImageView,
-                           params.allocator);
+                           params.vkc.allocator);
         params.vkc.swapchain.depthImageView = VK_NULL_HANDLE;
 
         vkDestroyImage(params.vkc.device.logical,
-                       params.vkc.swapchain.depthImage, params.allocator);
+                       params.vkc.swapchain.depthImage, params.vkc.allocator);
         params.vkc.swapchain.depthImage = VK_NULL_HANDLE;
 
         vkFreeMemory(params.vkc.device.logical,
-                     params.vkc.swapchain.depthImageMemory, params.allocator);
+                     params.vkc.swapchain.depthImageMemory,
+                     params.vkc.allocator);
         params.vkc.swapchain.depthImageMemory = VK_NULL_HANDLE;
     }
 
@@ -625,7 +631,7 @@ void createSwapchain(Params &params) {
     for (uint32_t i = 0; i < imageCount; ++i) {
         imageViewCi.image = params.vkc.swapchain.images[i];
         VK_CHECK(vkCreateImageView(params.vkc.device.logical, &imageViewCi,
-                                   params.allocator,
+                                   params.vkc.allocator,
                                    &params.vkc.swapchain.imageViews[i]));
     }
 
@@ -649,7 +655,7 @@ void createSwapchain(Params &params) {
     imageViewCi.subresourceRange.layerCount = 1;
 
     VK_CHECK(vkCreateImageView(params.vkc.device.logical, &imageViewCi,
-                               params.allocator,
+                               params.vkc.allocator,
                                &params.vkc.swapchain.depthImageView));
 
     transitionImageLayout(params, params.vkc.swapchain.depthImage,
@@ -674,7 +680,7 @@ void createSwapchain(Params &params) {
         framebufferCi.pAttachments = attachments;
 
         VK_CHECK(vkCreateFramebuffer(params.vkc.device.logical, &framebufferCi,
-                                     params.allocator,
+                                     params.vkc.allocator,
                                      &params.vkc.swapchain.framebuffers[i]));
     }
 }
@@ -699,8 +705,8 @@ void createTexturSampler(Params &params) {
     info.minLod = 0.0f;
     info.maxLod = 0.0f;
 
-    VK_CHECK(vkCreateSampler(params.vkc.device.logical, &info, params.allocator,
-                             &params.vkc.textureSampler));
+    VK_CHECK(vkCreateSampler(params.vkc.device.logical, &info,
+                             params.vkc.allocator, &params.vkc.textureSampler));
 }
 
 void createImage(Params &params, uint32_t width, uint32_t height,
@@ -722,7 +728,7 @@ void createImage(Params &params, uint32_t width, uint32_t height,
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     VK_CHECK(vkCreateImage(params.vkc.device.logical, &imageInfo,
-                           params.allocator, &image));
+                           params.vkc.allocator, &image));
 
     VkMemoryRequirements memRequirements;
     vkGetImageMemoryRequirements(params.vkc.device.logical, image,
@@ -861,12 +867,23 @@ void init(Params &params) {
     createInstance(params);
     LOG("=Create surface=");
     VK_CHECK(glfwCreateWindowSurface(params.vkc.instance, params.window,
-                                     params.allocator, &params.vkc.surface));
+                                     params.vkc.allocator,
+                                     &params.vkc.surface));
     createDevice(params);
     pickSwapchainFormats(params);
     createRenderPass(params);
     createSwapchain(params);
     createTexturSampler(params);
+    LOG("=Create semaphores=");
+    VkSemaphoreCreateInfo semaphoreCi = {};
+    semaphoreCi.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+    VK_CHECK(vkCreateSemaphore(params.vkc.device.logical, &semaphoreCi,
+                               params.vkc.allocator,
+                               &params.vkc.imageAvailableSemaphore));
+    VK_CHECK(vkCreateSemaphore(params.vkc.device.logical, &semaphoreCi,
+                               params.vkc.allocator,
+                               &params.vkc.renderFinishedSemaphore));
 }
 
 void terminate(Params &params) {
@@ -874,48 +891,58 @@ void terminate(Params &params) {
         VK_CHECK(vkDeviceWaitIdle(params.vkc.device.logical));
     }
 
+    LOG("=Destroy semaphores=");
+    vkDestroySemaphore(params.vkc.device.logical,
+                       params.vkc.renderFinishedSemaphore,
+                       params.vkc.allocator);
+    vkDestroySemaphore(params.vkc.device.logical,
+                       params.vkc.imageAvailableSemaphore,
+                       params.vkc.allocator);
+
     LOG("=Destroy texture sampler=");
     vkDestroySampler(params.vkc.device.logical, params.vkc.textureSampler,
-                     params.allocator);
+                     params.vkc.allocator);
 
     LOG("=Destroy swap chain=");
     vkDestroyImageView(params.vkc.device.logical,
-                       params.vkc.swapchain.depthImageView, params.allocator);
+                       params.vkc.swapchain.depthImageView,
+                       params.vkc.allocator);
     params.vkc.swapchain.depthImageView = VK_NULL_HANDLE;
 
     vkDestroyImage(params.vkc.device.logical, params.vkc.swapchain.depthImage,
-                   params.allocator);
+                   params.vkc.allocator);
     params.vkc.swapchain.depthImage = VK_NULL_HANDLE;
 
     vkFreeMemory(params.vkc.device.logical,
-                 params.vkc.swapchain.depthImageMemory, params.allocator);
+                 params.vkc.swapchain.depthImageMemory, params.vkc.allocator);
     params.vkc.swapchain.depthImageMemory = VK_NULL_HANDLE;
 
     for (auto &iv : params.vkc.swapchain.imageViews) {
-        vkDestroyImageView(params.vkc.device.logical, iv, params.allocator);
+        vkDestroyImageView(params.vkc.device.logical, iv, params.vkc.allocator);
     }
     params.vkc.swapchain.imageViews.clear();
 
     for (auto &fb : params.vkc.swapchain.framebuffers) {
-        vkDestroyFramebuffer(params.vkc.device.logical, fb, params.allocator);
+        vkDestroyFramebuffer(params.vkc.device.logical, fb,
+                             params.vkc.allocator);
     }
     params.vkc.swapchain.framebuffers.clear();
 
     vkDestroySwapchainKHR(params.vkc.device.logical, params.vkc.swapchain.chain,
-                          params.allocator);
+                          params.vkc.allocator);
 
     LOG("=Destroy render pass=");
     vkDestroyRenderPass(params.vkc.device.logical, params.vkc.renderPass,
-                        params.allocator);
+                        params.vkc.allocator);
     params.vkc.renderPass = VK_NULL_HANDLE;
 
     LOG("=Destroy command pool=");
     vkDestroyCommandPool(params.vkc.device.logical,
-                         params.vkc.device.commandPool, params.allocator);
+                         params.vkc.device.commandPool, params.vkc.allocator);
     params.vkc.device.commandPool = VK_NULL_HANDLE;
 
     LOG("=Destroy logical device=");
-    vkDestroyDevice(params.vkc.device.logical, params.allocator);
+    vkDestroyDevice(params.vkc.device.logical, params.vkc.allocator);
     params.vkc.device.logical = VK_NULL_HANDLE;
     params.vkc.device.graphicsQueue = VK_NULL_HANDLE;
     params.vkc.device.presentQueue = VK_NULL_HANDLE;
@@ -924,7 +951,7 @@ void terminate(Params &params) {
 
     LOG("=Destroy surface=");
     vkDestroySurfaceKHR(params.vkc.instance, params.vkc.surface,
-                        params.allocator);
+                        params.vkc.allocator);
     params.vkc.surface = VK_NULL_HANDLE;
 
 #ifndef NDEBUG
@@ -932,13 +959,13 @@ void terminate(Params &params) {
     auto f = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
         params.vkc.instance, "vkDestroyDebugUtilsMessengerEXT");
     if (f != nullptr) {
-        f(params.vkc.instance, params.vkc.dbgMsgr, params.allocator);
+        f(params.vkc.instance, params.vkc.dbgMsgr, params.vkc.allocator);
         params.vkc.dbgMsgr = VK_NULL_HANDLE;
     }
 #endif
 
     LOG("=Destroy instance=");
-    vkDestroyInstance(params.vkc.instance, params.allocator);
+    vkDestroyInstance(params.vkc.instance, params.vkc.allocator);
     params.vkc.instance = VK_NULL_HANDLE;
 
     terminateGLFW(params);

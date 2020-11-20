@@ -59,15 +59,17 @@ struct VulkanContext {
     VkDebugUtilsMessengerEXT dbgMsgr = VK_NULL_HANDLE;
     std::array<const char *, 1> validationLayers = {
         "VK_LAYER_KHRONOS_validation"};
+    VkSemaphore imageAvailableSemaphore;
+    VkSemaphore renderFinishedSemaphore;
+    VkAllocationCallbacks *allocator = nullptr;
 };
 
 struct Params {
-    VulkanContext vkc;
-    GLFWwindow *window = nullptr;
-    VkAllocationCallbacks *allocator = nullptr;
+    VulkanContext vkc = {};
     std::ofstream *fileStream = nullptr;
     std::chrono::steady_clock::time_point startingTime;
     std::stringstream timess;
+    GLFWwindow *window = nullptr;
     uint32_t windowWidth = 800;
     uint32_t windowHeight = 600;
     bool recreateSwapchain = false;
