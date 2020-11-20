@@ -4,9 +4,11 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <array>
+#include <chrono>
 #include <cstdio>
 #include <iostream>
 #include <ostream>
+#include <sstream>
 #include <vector>
 #include <vulkan/vulkan.h>
 
@@ -50,10 +52,10 @@ struct Log {
 #ifndef NDEBUG
     Verbosity verbosity = Verbosity::DEBUG;
 #else
-    Verbosity verbosity = Verbosity::SILENT;
+    Verbosity verbosity = Verbosity::NORMAL;
 #endif
-    std::ostream &errStream = std::cerr;
-    std::ostream &outStream = std::cout;
+    std::ostream *errStream = &std::cerr;
+    std::ostream *outStream = &std::cout;
 };
 
 struct Params {
@@ -61,5 +63,7 @@ struct Params {
     GLFWwindow *window = nullptr;
     VkAllocationCallbacks *allocator = nullptr;
     Log log = {};
+    std::chrono::steady_clock::time_point startingTime;
+    std::stringstream timess;
 };
 }

@@ -382,6 +382,13 @@ void terminate(Params &params) {
 
 void run() {
     Params params = {};
+    params.startingTime = std::chrono::steady_clock::now();
+
+    std::ofstream errStream("err.log", std::ios::out);
+    if (errStream.is_open()) {
+        params.log.errStream = &errStream;
+    }
+
     init(params);
     terminate(params);
 }

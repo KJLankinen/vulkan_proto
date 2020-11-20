@@ -4,6 +4,7 @@
 #include <array>
 #include <assert.h>
 #include <cstring>
+#include <fstream>
 #include <glm/glm.hpp>
 #include <iostream>
 #include <sstream>

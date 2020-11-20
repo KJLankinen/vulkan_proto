@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <string>
 
-#define FORMAT_STR(...) vulkan_proto::string_format(__VA_ARGS__)
+#define FORMAT_STR(...) vulkan_proto::stringFormat(__VA_ARGS__)
 
 #ifndef NDEBUG
 #define VK_CHECK(call)                                                         \
@@ -39,7 +39,7 @@
 
 namespace vulkan_proto {
 template <typename... Args>
-std::string string_format(const char *format, Args... args) {
+std::string stringFormat(const char *format, Args... args) {
     size_t size = snprintf(nullptr, 0, format, args...) + 1;
     if (size <= 0) {
         throw std::runtime_error("Error while formatting string");
@@ -49,10 +49,53 @@ std::string string_format(const char *format, Args... args) {
     return std::string(buf.get(), buf.get() + size - 1);
 }
 
-inline void log(Params &params, Verbosity verbosity, std::ostream &stream,
+void formatTimeSinceStart(Params &params) {
+    params.timess.clear();
+    params.timess.str(std::string());
+    auto now = std::chrono::steady_clock::now();
+    auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
+        now - params.startingTime);
+    auto hours = std::chrono::duration_cast<std::chrono::hours>(milliseconds);
+    milliseconds -=
+        std::chrono::duration_cast<std::chrono::milliseconds>(hours);
+    auto minutes =
+        std::chrono::duration_cast<std::chrono::minutes>(milliseconds);
+    milliseconds -=
+        std::chrono::duration_cast<std::chrono::milliseconds>(minutes);
+    auto seconds =
+        std::chrono::duration_cast<std::chrono::seconds>(milliseconds);
+    milliseconds -=
+        std::chrono::duration_cast<std::chrono::milliseconds>(seconds);
+    params.timess << "[";
+    if (hours.count() < 10) {
+        params.timess << "0";
+    }
+    params.timess << hours.count() << ":";
+
+    if (minutes.count() < 10) {
+        params.timess << "0";
+    }
+    params.timess << minutes.count() << ":";
+
+    if (seconds.count() < 10) {
+        params.timess << "0";
+    }
+    params.timess << seconds.count() << ":";
+
+    if (milliseconds.count() < 100) {
+        params.timess << "0";
+    }
+    if (milliseconds.count() < 10) {
+        params.timess << "0";
+    }
+    params.timess << milliseconds.count() << "]";
+}
+
+inline void log(Params &params, Verbosity verbosity, std::ostream *stream,
                 std::string msg) {
-    if (verbosity <= params.log.verbosity) {
-        stream << msg.c_str();
+    if (stream != nullptr && verbosity <= params.log.verbosity) {
+        formatTimeSinceStart(params);
+        *stream << params.timess.str().c_str() << " " << msg.c_str();
     }
 }
 
