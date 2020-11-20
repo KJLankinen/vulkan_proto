@@ -1,6 +1,6 @@
 #pragma once
+#include <fstream>
 #include <memory>
-#include <ostream>
 #include <stdexcept>
 #include <stdio.h>
 #include <string>
@@ -18,24 +18,8 @@
     vulkan_proto::abortIf(params, condition, FORMAT_STR(__VA_ARGS__),          \
                           __FILE__, __LINE__)
 
-#define PRIO_LOG(...)                                                          \
-    vulkan_proto::log(params, vulkan_proto::Verbosity::SILENT,                 \
-                      params.log.outStream, FORMAT_STR(__VA_ARGS__))
 #define LOG(...)                                                               \
-    vulkan_proto::log(params, vulkan_proto::Verbosity::NORMAL,                 \
-                      params.log.outStream, FORMAT_STR(__VA_ARGS__))
-#define DBLOG(...)                                                             \
-    vulkan_proto::log(params, vulkan_proto::Verbosity::DEBUG,                  \
-                      params.log.outStream, FORMAT_STR(__VA_ARGS__))
-#define PRIO_ELOG(...)                                                         \
-    vulkan_proto::log(params, vulkan_proto::Verbosity::SILENT,                 \
-                      params.log.errStream, FORMAT_STR(__VA_ARGS__))
-#define ELOG(...)                                                              \
-    vulkan_proto::log(params, vulkan_proto::Verbosity::NORMAL,                 \
-                      params.log.errStream, FORMAT_STR(__VA_ARGS__))
-#define EDBLOG(...)                                                            \
-    vulkan_proto::log(params, vulkan_proto::Verbosity::DEBUG,                  \
-                      params.log.errStream, FORMAT_STR(__VA_ARGS__))
+    vulkan_proto::log(params, params.fileStream, FORMAT_STR(__VA_ARGS__))
 
 namespace vulkan_proto {
 template <typename... Args>
@@ -91,28 +75,35 @@ void formatTimeSinceStart(Params &params) {
     params.timess << milliseconds.count() << "]";
 }
 
-inline void log(Params &params, Verbosity verbosity, std::ostream *stream,
-                std::string msg) {
-    if (stream != nullptr && verbosity <= params.log.verbosity) {
-        formatTimeSinceStart(params);
-        *stream << params.timess.str().c_str() << " " << msg.c_str();
+inline void log(Params &params, std::ofstream *fileStream, std::string msg) {
+#ifndef NDEBUG
+    formatTimeSinceStart(params);
+    if (fileStream != nullptr) {
+        *fileStream << params.timess.str().c_str() << " " << msg.c_str()
+                    << std::endl;
     }
+    std::cout << params.timess.str().c_str() << " " << msg.c_str() << std::endl;
+#endif
 }
 
 void terminate(Params &params);
 inline void abort(Params &params, const char *msg) {
-    ELOG(msg);
-    ELOG("Aborting\n");
+    LOG(msg);
+    LOG("Aborting");
     terminate(params);
+
+    if (params.fileStream != nullptr) {
+        params.fileStream->flush();
+    }
+
     exit(EXIT_FAILURE);
 }
 
 inline void abortIf(Params &params, bool condition, std::string msg,
                     const char *fileName, int line) {
     if (condition) {
-        abort(
-            params,
-            FORMAT_STR("'%s' at %s:%d\n", msg.c_str(), fileName, line).c_str());
+        abort(params,
+              FORMAT_STR("'%s' at %s:%d", msg.c_str(), fileName, line).c_str());
     }
 }
 
@@ -120,7 +111,7 @@ inline void checkVulkanCallResult(Params &params, VkResult result,
                                   const char *callStr, const char *fileName,
                                   int line) {
     abortIf(params, VK_SUCCESS != result,
-            FORMAT_STR("Vulkan error '%d':\n%s\n", result, callStr), fileName,
+            FORMAT_STR("Vulkan error '%d':\n%s", result, callStr), fileName,
             line);
 }
 } // namespace vulkan_proto

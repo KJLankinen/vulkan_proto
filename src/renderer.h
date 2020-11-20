@@ -30,9 +30,6 @@ void transitionImageLayout(Params &params, VkImage image, VkFormat format,
                            VkImageLayout oldLayout, VkImageLayout newLayout);
 VkCommandBuffer beginSingleTimeCommands(Params &params);
 void endSingleTimeCommands(Params &params, VkCommandBuffer commandBuffer);
-void abortIf(Params &params, bool condition, const char *msg,
-             const char *fileName, int line);
-void log(Params &params, Verbosity verbosity, FILE *stream, const char *msg);
 void run();
 void terminate(Params &params);
 void terminateGLFW(Params &params);

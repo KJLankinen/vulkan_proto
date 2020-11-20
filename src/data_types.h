@@ -55,32 +55,17 @@ struct VulkanContext {
     Swapchain swapchain = {};
     VkRenderPass renderPass = VK_NULL_HANDLE;
     VkSurfaceKHR surface = VK_NULL_HANDLE;
+    VkSampler textureSampler = VK_NULL_HANDLE;
     VkDebugUtilsMessengerEXT dbgMsgr = VK_NULL_HANDLE;
     std::array<const char *, 1> validationLayers = {
         "VK_LAYER_KHRONOS_validation"};
-};
-
-enum class Verbosity {
-    SILENT,
-    NORMAL,
-    DEBUG,
-};
-
-struct Log {
-#ifndef NDEBUG
-    Verbosity verbosity = Verbosity::DEBUG;
-#else
-    Verbosity verbosity = Verbosity::NORMAL;
-#endif
-    std::ostream *errStream = &std::cerr;
-    std::ostream *outStream = &std::cout;
 };
 
 struct Params {
     VulkanContext vkc;
     GLFWwindow *window = nullptr;
     VkAllocationCallbacks *allocator = nullptr;
-    Log log = {};
+    std::ofstream *fileStream = nullptr;
     std::chrono::steady_clock::time_point startingTime;
     std::stringstream timess;
     uint32_t windowWidth = 800;
