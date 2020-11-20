@@ -20,7 +20,7 @@ struct PhysicalDevice {
     std::vector<VkPresentModeKHR> presentModes;
     VkPhysicalDeviceMemoryProperties memoryProperties = {};
     int grahicsFamily = -1;
-    int presenFamily = -1;
+    int presentFamily = -1;
     std::array<const char *, 1> requiredExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 };

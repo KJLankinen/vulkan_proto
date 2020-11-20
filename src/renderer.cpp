@@ -38,7 +38,7 @@ void terminateGLFW(Params &params) {
 }
 
 void createInstance(Params &params) {
-    LOG("=Instance creation=\n");
+    LOG("=Create instance=\n");
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.pApplicationName = "Vulkan prototype";
@@ -115,6 +115,7 @@ void createInstance(Params &params) {
         vkCreateInstance(&instanceCi, params.allocator, &params.vkc.instance));
 
 #ifndef NDEBUG
+    LOG("=Create debug messenger=\n");
     auto f = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
         params.vkc.instance, "vkCreateDebugUtilsMessengerEXT");
     ABORT_IF(f == nullptr,
@@ -125,7 +126,7 @@ void createInstance(Params &params) {
 }
 
 void createDevice(Params &params) {
-    LOG("=Device creation=\n");
+    LOG("=Create physical device=\n");
     uint32_t deviceCount = 0;
     VK_CHECK(
         vkEnumeratePhysicalDevices(params.vkc.instance, &deviceCount, nullptr));
@@ -322,7 +323,7 @@ void createDevice(Params &params) {
         params.vkc.device.physical.surfaceFormats = surfaceFormats;
         params.vkc.device.physical.presentModes = presentModes;
         params.vkc.device.physical.grahicsFamily = graphicsFamily;
-        params.vkc.device.physical.presenFamily = presentFamily;
+        params.vkc.device.physical.presentFamily = presentFamily;
 
         // Cache these for later
         vkGetPhysicalDeviceMemoryProperties(
@@ -341,12 +342,65 @@ void createDevice(Params &params) {
             break;
         }
     }
+
+    LOG("=Create logical device=\n");
+    std::vector<VkDeviceQueueCreateInfo> qcis;
+    std::set<int> uniQueue = {params.vkc.device.physical.grahicsFamily,
+                              params.vkc.device.physical.presentFamily};
+
+    float queuePriority = 1.0f;
+    for (int qfi : uniQueue) {
+        VkDeviceQueueCreateInfo ci = {};
+        ci.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        ci.queueFamilyIndex = qfi;
+        ci.queueCount = 1;
+        ci.pQueuePriorities = &queuePriority;
+        qcis.push_back(ci);
+    }
+
+    VkPhysicalDeviceFeatures deviceFeatures = {};
+    deviceFeatures.geometryShader = VK_TRUE;
+    deviceFeatures.tessellationShader = VK_TRUE;
+    deviceFeatures.samplerAnisotropy = VK_TRUE;
+
+    VkDeviceCreateInfo deviceCi = {};
+    deviceCi.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    deviceCi.pQueueCreateInfos = qcis.data();
+    deviceCi.queueCreateInfoCount = static_cast<uint32_t>(qcis.size());
+    deviceCi.pEnabledFeatures = &deviceFeatures;
+    deviceCi.enabledExtensionCount = static_cast<uint32_t>(
+        params.vkc.device.physical.requiredExtensions.size());
+    deviceCi.ppEnabledExtensionNames =
+        params.vkc.device.physical.requiredExtensions.data();
+    deviceCi.enabledLayerCount =
+        static_cast<uint32_t>(params.vkc.validationLayers.size());
+    deviceCi.ppEnabledLayerNames = params.vkc.validationLayers.data();
+
+    VK_CHECK(vkCreateDevice(params.vkc.device.physical.device, &deviceCi,
+                            params.allocator, &params.vkc.device.logical));
+
+    vkGetDeviceQueue(params.vkc.device.logical,
+                     params.vkc.device.physical.grahicsFamily, 0,
+                     &params.vkc.device.graphicsQueue);
+    vkGetDeviceQueue(params.vkc.device.logical,
+                     params.vkc.device.physical.presentFamily, 0,
+                     &params.vkc.device.presentQueue);
+
+    VkCommandPoolCreateInfo cpci = {};
+    cpci.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    cpci.queueFamilyIndex = params.vkc.device.physical.grahicsFamily;
+    cpci.flags = 0;
+
+    LOG("=Create command pool=\n");
+    VK_CHECK(vkCreateCommandPool(params.vkc.device.logical, &cpci,
+                                 params.allocator,
+                                 &params.vkc.device.commandPool));
 }
 
 void init(Params &params) {
     initGLFW(params);
     createInstance(params);
-    LOG("=Surface creation=\n");
+    LOG("=Create surface=\n");
     VK_CHECK(glfwCreateWindowSurface(params.vkc.instance, params.window,
                                      params.allocator, &params.vkc.surface));
     createDevice(params);
@@ -364,17 +418,37 @@ void terminate(Params &params) {
             params.vkc.instance, "vkDestroyDebugUtilsMessengerEXT");
         if (f != nullptr) {
             f(params.vkc.instance, params.vkc.dbgMsgr, params.allocator);
+            params.vkc.dbgMsgr = VK_NULL_HANDLE;
         }
 #endif
+        if (params.vkc.device.logical != VK_NULL_HANDLE) {
+            if (params.vkc.device.commandPool != VK_NULL_HANDLE) {
+                LOG("=Destroy command pool=\n");
+                vkDestroyCommandPool(params.vkc.device.logical,
+                                     params.vkc.device.commandPool,
+                                     params.allocator);
+                params.vkc.device.commandPool = VK_NULL_HANDLE;
+            }
+
+            LOG("=Destroy logical device=\n");
+            vkDestroyDevice(params.vkc.device.logical, params.allocator);
+            params.vkc.device.logical = VK_NULL_HANDLE;
+            params.vkc.device.graphicsQueue = VK_NULL_HANDLE;
+            params.vkc.device.presentQueue = VK_NULL_HANDLE;
+            params.vkc.device.commandPool = VK_NULL_HANDLE;
+            params.vkc.device.physical.device = VK_NULL_HANDLE;
+        }
 
         if (params.vkc.surface != VK_NULL_HANDLE) {
             LOG("=Destroy surface=\n");
             vkDestroySurfaceKHR(params.vkc.instance, params.vkc.surface,
                                 params.allocator);
+            params.vkc.surface = VK_NULL_HANDLE;
         }
 
         LOG("=Destroy instance=\n");
         vkDestroyInstance(params.vkc.instance, params.allocator);
+        params.vkc.instance = VK_NULL_HANDLE;
     }
 
     terminateGLFW(params);

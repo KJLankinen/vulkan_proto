@@ -7,6 +7,7 @@
 #include <fstream>
 #include <glm/glm.hpp>
 #include <iostream>
+#include <set>
 #include <sstream>
 #include <string>
 
