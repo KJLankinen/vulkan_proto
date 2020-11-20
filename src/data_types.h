@@ -19,7 +19,7 @@ struct PhysicalDevice {
     std::vector<VkSurfaceFormatKHR> surfaceFormats;
     std::vector<VkPresentModeKHR> presentModes;
     VkPhysicalDeviceMemoryProperties memoryProperties = {};
-    int grahicsFamily = -1;
+    int graphicsFamily = -1;
     int presentFamily = -1;
     std::array<const char *, 1> requiredExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME};
@@ -33,9 +33,27 @@ struct Device {
     VkCommandPool commandPool = VK_NULL_HANDLE;
 };
 
+struct Swapchain {
+    VkSwapchainKHR chain = VK_NULL_HANDLE;
+
+    std::vector<VkFramebuffer> framebuffers;
+    std::vector<VkImage> images;
+    std::vector<VkImageView> imageViews;
+
+    VkImageView depthImageView = VK_NULL_HANDLE;
+    VkImage depthImage = VK_NULL_HANDLE;
+    VkDeviceMemory depthImageMemory = VK_NULL_HANDLE;
+    VkFormat depthFormat = VK_FORMAT_UNDEFINED;
+
+    VkSurfaceFormatKHR surfaceFormat = {};
+    VkExtent2D extent = {};
+};
+
 struct VulkanContext {
     VkInstance instance = VK_NULL_HANDLE;
-    Device device;
+    Device device = {};
+    Swapchain swapchain = {};
+    VkRenderPass renderPass = VK_NULL_HANDLE;
     VkSurfaceKHR surface = VK_NULL_HANDLE;
     VkDebugUtilsMessengerEXT dbgMsgr = VK_NULL_HANDLE;
     std::array<const char *, 1> validationLayers = {
@@ -65,5 +83,8 @@ struct Params {
     Log log = {};
     std::chrono::steady_clock::time_point startingTime;
     std::stringstream timess;
+    uint32_t windowWidth = 800;
+    uint32_t windowHeight = 600;
+    bool recreateSwapchain = false;
 };
 }
