@@ -1,9 +1,6 @@
 #pragma once
 
 #include "headers.h"
-#include "vulkan_context.h"
-#include <array>
-#include <iostream>
 
 namespace vulkan_proto {
 struct Instance{
@@ -15,7 +12,7 @@ struct Instance{
         "VK_LAYER_KHRONOS_validation"};
 
     Instance(VulkanContext_Temp *ctx);
-    ~Intance() {}
+    ~Instance();
     void create();
     void destroy();
 };

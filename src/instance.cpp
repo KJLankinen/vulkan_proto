@@ -105,7 +105,7 @@ void Instance::create() {
 #endif
 }
 
-void instance::destroy() {
+void Instance::destroy() {
 #ifndef NDEBUG
     LOG("=Destroy debug messenger=");
     auto f = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
