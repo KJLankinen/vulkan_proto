@@ -2,8 +2,9 @@
 #include "headers.h"
 
 namespace vulkan_proto {
+struct Renderer;
 struct Device {
-    VulkanContext *m_ctx = nullptr;
+    const Renderer &m_renderer;
     VkDevice m_handle = VK_NULL_HANDLE;
     VkQueue m_graphicsQueue = VK_NULL_HANDLE;
     VkQueue m_presentQueue = VK_NULL_HANDLE;
@@ -17,20 +18,9 @@ struct Device {
     std::array<const char *, 1> m_requiredExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
-    Device();
+    Device(Renderer &renderer);
     ~Device();
-    void create(VulkanContext *ctx);
+    void create();
     void destroy();
-    void createImage(uint32_t width, uint32_t height, uint32_t depth,
-                     VkFormat format, VkImageTiling tiling,
-                     VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
-                     VkImage &image, VkDeviceMemory &imageMemory);
-    void transitionImageLayout(VkImage image, VkFormat format,
-                               VkImageLayout oldLayout,
-                               VkImageLayout newLayout);
-    uint32_t findMemoryType(uint32_t typeFilter,
-                            VkMemoryPropertyFlags properties);
-    VkCommandBuffer beginSingleTimeCommands();
-    void endSingleTimeCommands(VkCommandBuffer commandBuffer);
 };
 }

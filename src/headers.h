@@ -3,7 +3,6 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #define GLFW_INCLUDE_VULKAN
 #include "util.h"
-#include "vulkan_context.h"
 #include <GLFW/glfw3.h>
 #include <array>
 #include <chrono>

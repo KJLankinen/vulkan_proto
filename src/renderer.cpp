@@ -1,7 +1,9 @@
 #include "renderer.h"
 
 namespace vulkan_proto {
-Renderer::Renderer() {}
+Renderer::Renderer()
+    : m_instance(*this), m_device(*this), m_surface(*this), m_swapchain(*this),
+      m_renderPass(*this) {}
 Renderer::~Renderer() {}
 
 void Renderer::createTextureSampler() {
@@ -24,13 +26,13 @@ void Renderer::createTextureSampler() {
     info.minLod = 0.0f;
     info.maxLod = 0.0f;
 
-    VK_CHECK(vkCreateSampler(m_ctx.device->m_handle, &info, m_ctx.allocator,
-                             &m_textureSampler));
+    VK_CHECK(
+        vkCreateSampler(getDevice(), &info, m_allocator, &m_textureSampler));
 }
 
 void Renderer::destroyTextureSampler() {
     LOG("=Destroy texture sampler=");
-    vkDestroySampler(m_ctx.device->m_handle, m_textureSampler, m_ctx.allocator);
+    vkDestroySampler(getDevice(), m_textureSampler, m_allocator);
 }
 
 void Renderer::createSemaphores() {
@@ -38,46 +40,186 @@ void Renderer::createSemaphores() {
     VkSemaphoreCreateInfo semaphoreCi = {};
     semaphoreCi.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
-    VK_CHECK(vkCreateSemaphore(m_ctx.device->m_handle, &semaphoreCi,
-                               m_ctx.allocator, &m_imageAvailable));
-    VK_CHECK(vkCreateSemaphore(m_ctx.device->m_handle, &semaphoreCi,
-                               m_ctx.allocator, &m_renderingFinished));
+    VK_CHECK(vkCreateSemaphore(getDevice(), &semaphoreCi, m_allocator,
+                               &m_imageAvailable));
+    VK_CHECK(vkCreateSemaphore(getDevice(), &semaphoreCi, m_allocator,
+                               &m_renderingFinished));
 }
 
 void Renderer::destroySemaphores() {
     LOG("=Destroy semaphores=");
-    vkDestroySemaphore(m_ctx.device->m_handle, m_renderingFinished,
-                       m_ctx.allocator);
-    vkDestroySemaphore(m_ctx.device->m_handle, m_imageAvailable,
-                       m_ctx.allocator);
+    vkDestroySemaphore(getDevice(), m_renderingFinished, m_allocator);
+    vkDestroySemaphore(getDevice(), m_imageAvailable, m_allocator);
+}
+
+void Renderer::createImage(uint32_t width, uint32_t height, uint32_t depth,
+                           VkFormat format, VkImageTiling tiling,
+                           VkImageUsageFlags usage,
+                           VkMemoryPropertyFlags properties, VkImage &image,
+                           VkDeviceMemory &imageMemory) const {
+    VkImageCreateInfo imageInfo = {};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.extent.width = width;
+    imageInfo.extent.height = height;
+    imageInfo.extent.depth = depth;
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.format = format;
+    imageInfo.tiling = tiling;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.usage = usage;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    VK_CHECK(vkCreateImage(getDevice(), &imageInfo, m_allocator, &image));
+
+    VkMemoryRequirements memRequirements;
+    vkGetImageMemoryRequirements(getDevice(), image, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex =
+        findMemoryType(memRequirements.memoryTypeBits, properties);
+
+    VK_CHECK(vkAllocateMemory(getDevice(), &allocInfo, nullptr, &imageMemory));
+
+    VK_CHECK(vkBindImageMemory(getDevice(), image, imageMemory, 0));
+}
+
+void Renderer::transitionImageLayout(VkImage image, VkFormat format,
+                                     VkImageLayout oldLayout,
+                                     VkImageLayout newLayout) const {
+    VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+
+    VkImageMemoryBarrier barrier = {};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = oldLayout;
+    barrier.newLayout = newLayout;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = image;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+
+    VkPipelineStageFlags sourceStage;
+    VkPipelineStageFlags destinationStage;
+
+    if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        if (format == VK_FORMAT_D32_SFLOAT_S8_UINT ||
+            format == VK_FORMAT_D24_UNORM_S8_UINT)
+            barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+    } else
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+
+    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
+        newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
+               newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+        sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    } else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
+               newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    } else {
+        THROW_IF(true, "Unsupported layout transition!");
+    }
+
+    vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0,
+                         nullptr, 0, nullptr, 1, &barrier);
+
+    endSingleTimeCommands(commandBuffer);
+}
+
+uint32_t Renderer::findMemoryType(uint32_t typeFilter,
+                                  VkMemoryPropertyFlags properties) const {
+    for (uint32_t i = 0; i < m_device.m_memProps.memoryTypeCount; i++) {
+        if (typeFilter & (1 << i) &&
+            (m_device.m_memProps.memoryTypes[i].propertyFlags & properties) ==
+                properties) {
+            return i;
+        }
+    }
+
+    THROW_IF(true, "Failed to find suitable memory type!");
+
+    return ~0u;
+}
+
+VkCommandBuffer Renderer::beginSingleTimeCommands() const {
+    VkCommandBufferAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandPool = m_device.m_commandPool;
+    allocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer commandBuffer;
+    VK_CHECK(vkAllocateCommandBuffers(getDevice(), &allocInfo, &commandBuffer));
+
+    VkCommandBufferBeginInfo beginInfo = {};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    VK_CHECK(vkBeginCommandBuffer(commandBuffer, &beginInfo));
+
+    return commandBuffer;
+}
+
+void Renderer::endSingleTimeCommands(VkCommandBuffer commandBuffer) const {
+    if (commandBuffer != VK_NULL_HANDLE) {
+        VK_CHECK(vkEndCommandBuffer(commandBuffer));
+
+        VkSubmitInfo submitInfo = {};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffer;
+
+        VK_CHECK(vkQueueSubmit(m_device.m_graphicsQueue, 1, &submitInfo,
+                               VK_NULL_HANDLE));
+        VK_CHECK(vkQueueWaitIdle(m_device.m_graphicsQueue));
+
+        vkFreeCommandBuffers(getDevice(), m_device.m_commandPool, 1,
+                             &commandBuffer);
+    }
 }
 
 void Renderer::init() {
-    m_ctx.instance = &m_instance;
-    m_ctx.device = &m_device;
-    m_ctx.surface = &m_surface;
-    m_ctx.swapchain = &m_swapchain;
-    m_ctx.renderPass = &m_renderPass;
-
     m_surface.initWindow();
-    m_instance.create(&m_ctx);
-    m_surface.create(&m_ctx);
-    m_device.create(&m_ctx);
-    Swapchain::chooseFormats(&m_ctx, m_swapchain);
-    m_renderPass.create(&m_ctx);
-    m_swapchain.create(&m_ctx);
+    m_instance.create();
+    m_surface.create();
+    m_device.create();
+    Swapchain::chooseFormats(m_swapchain);
+    m_renderPass.create();
+    m_swapchain.create();
     createTextureSampler();
     createSemaphores();
 }
 
 void Renderer::terminate() {
-    if (m_device.m_handle != VK_NULL_HANDLE) {
-        VK_CHECK(vkDeviceWaitIdle(m_device.m_handle));
+    if (getDevice() != VK_NULL_HANDLE) {
+        VK_CHECK(vkDeviceWaitIdle(getDevice()));
     }
 
     destroySemaphores();
     destroyTextureSampler();
-    m_swapchain.destroy(m_swapchain.m_handle);
+    m_swapchain.destroy(getSwapchain());
     m_renderPass.destroy();
     m_device.destroy();
     m_surface.destroy();

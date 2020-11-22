@@ -3,8 +3,9 @@
 #include "headers.h"
 
 namespace vulkan_proto {
+struct Renderer;
 struct Swapchain {
-    VulkanContext *m_ctx = nullptr;
+    const Renderer &m_renderer;
     VkSwapchainKHR m_handle = VK_NULL_HANDLE;
 
     std::vector<VkFramebuffer> m_framebuffers;
@@ -19,10 +20,10 @@ struct Swapchain {
     VkSurfaceFormatKHR m_surfaceFormat = {};
     VkExtent2D m_extent = {};
 
-    Swapchain();
+    Swapchain(Renderer &renderer);
     ~Swapchain();
-    void create(VulkanContext *ctx, bool recycle = false);
+    void create(bool recycle = false);
     void destroy(VkSwapchainKHR chain);
-    static void chooseFormats(VulkanContext *ctx, Swapchain &chain);
+    static void chooseFormats(Swapchain &chain);
 };
 }

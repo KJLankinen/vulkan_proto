@@ -1,4 +1,5 @@
 #include "instance.h"
+#include "renderer.h"
 
 namespace {
 #ifndef NDEBUG
@@ -19,13 +20,12 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
 } // namespace
 
 namespace vulkan_proto {
-Instance::Instance() {}
+Instance::Instance(Renderer &renderer) : m_renderer(renderer) {}
 
 Instance::~Instance() {}
 
-void Instance::create(VulkanContext *ctx) {
+void Instance::create() {
     LOG("=Create instance=");
-    m_ctx = ctx;
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.pApplicationName = "Vulkan prototype";
@@ -93,7 +93,8 @@ void Instance::create(VulkanContext *ctx) {
     instanceCi.enabledExtensionCount = extensions.size();
     instanceCi.ppEnabledExtensionNames = extensions.data();
 
-    VK_CHECK(vkCreateInstance(&instanceCi, m_ctx->allocator, &m_handle));
+    VK_CHECK(
+        vkCreateInstance(&instanceCi, m_renderer.getAllocator(), &m_handle));
 
 #ifndef NDEBUG
     LOG("=Create debug messenger=");
@@ -101,10 +102,8 @@ void Instance::create(VulkanContext *ctx) {
         m_handle, "vkCreateDebugUtilsMessengerEXT");
     THROW_IF(f == nullptr,
              "PFN_vkCreateDebugUtilsMessengerEXT returned nullptr");
-    VK_CHECK(f(m_handle, &dbgMsgrCi, m_ctx->allocator, &m_dbgMsgr));
+    VK_CHECK(f(m_handle, &dbgMsgrCi, m_renderer.getAllocator(), &m_dbgMsgr));
 #endif
-
-    m_ctx->instance = this;
 }
 
 void Instance::destroy() {
@@ -113,15 +112,13 @@ void Instance::destroy() {
     auto f = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
         m_handle, "vkDestroyDebugUtilsMessengerEXT");
     if (f != nullptr) {
-        f(m_handle, m_dbgMsgr, m_ctx->allocator);
+        f(m_handle, m_dbgMsgr, m_renderer.getAllocator());
         m_dbgMsgr = VK_NULL_HANDLE;
     }
 #endif
 
     LOG("=Destroy instance=");
-    vkDestroyInstance(m_handle, m_ctx->allocator);
+    vkDestroyInstance(m_handle, m_renderer.getAllocator());
     m_handle = VK_NULL_HANDLE;
-
-    m_ctx->instance = nullptr;
 }
 } // namespace vulkan_proto

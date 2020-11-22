@@ -3,13 +3,14 @@
 #include "headers.h"
 
 namespace vulkan_proto {
+struct Renderer;
 struct RenderPass {
-    VulkanContext *m_ctx = nullptr;
+    const Renderer &m_renderer;
     VkRenderPass m_handle = VK_NULL_HANDLE;
 
-    RenderPass();
+    RenderPass(Renderer &renderer);
     ~RenderPass();
-    void create(VulkanContext *ctx, bool recycle = false);
+    void create(bool recycle = false);
     void destroy();
 };
 } // namespace vulkan_proto

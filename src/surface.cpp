@@ -1,32 +1,30 @@
 #include "surface.h"
 #include "instance.h"
+#include "renderer.h"
 
 namespace vulkan_proto {
-Surface::Surface() {}
+Surface::Surface(Renderer &renderer) : m_renderer(renderer) {}
 Surface::~Surface() {}
 
-void Surface::create(VulkanContext *ctx) {
+void Surface::create() {
     LOG("=Create surface=");
-    m_ctx = ctx;
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     m_window = glfwCreateWindow(m_windowWidth, m_windowHeight, "Vulkan window",
                                 nullptr, nullptr);
 
-    VK_CHECK(glfwCreateWindowSurface(m_ctx->instance->m_handle, m_window,
-                                     m_ctx->allocator, &m_handle));
-    m_ctx->surface = this;
+    VK_CHECK(glfwCreateWindowSurface(m_renderer.getInstance(), m_window,
+                                     m_renderer.getAllocator(), &m_handle));
 }
 
 void Surface::destroy() {
     LOG("=Destroy surface=");
-    vkDestroySurfaceKHR(m_ctx->instance->m_handle, m_handle, m_ctx->allocator);
+    vkDestroySurfaceKHR(m_renderer.getInstance(), m_handle,
+                        m_renderer.getAllocator());
     m_handle = VK_NULL_HANDLE;
 
     if (m_window != nullptr) {
         glfwDestroyWindow(m_window);
     }
-
-    m_ctx->surface = nullptr;
 }
 
 void Surface::initWindow() {

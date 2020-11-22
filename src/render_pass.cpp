@@ -1,21 +1,20 @@
 #include "render_pass.h"
 #include "device.h"
+#include "renderer.h"
 #include "swapchain.h"
 
 namespace vulkan_proto {
-RenderPass::RenderPass() {}
+RenderPass::RenderPass(Renderer &renderer) : m_renderer(renderer) {}
 RenderPass::~RenderPass() {}
 
-void RenderPass::create(VulkanContext *ctx, bool recycle) {
+void RenderPass::create(bool recycle) {
     LOG("=Create render pass=");
     if (recycle) {
         destroy();
-    } else {
-        m_ctx = ctx;
     }
     VkAttachmentDescription colorAttchDes = {};
     colorAttchDes.flags = 0;
-    colorAttchDes.format = m_ctx->swapchain->m_surfaceFormat.format;
+    colorAttchDes.format = m_renderer.getSurfaceFormat();
     colorAttchDes.samples = VK_SAMPLE_COUNT_1_BIT;
     colorAttchDes.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     colorAttchDes.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -26,7 +25,7 @@ void RenderPass::create(VulkanContext *ctx, bool recycle) {
 
     VkAttachmentDescription depthAttchDes = {};
     depthAttchDes.flags = 0;
-    depthAttchDes.format = m_ctx->swapchain->m_depthFormat;
+    depthAttchDes.format = m_renderer.getDepthFormat();
     depthAttchDes.samples = VK_SAMPLE_COUNT_1_BIT;
     depthAttchDes.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     depthAttchDes.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -71,17 +70,14 @@ void RenderPass::create(VulkanContext *ctx, bool recycle) {
     renderPassCi.dependencyCount = 1;
     renderPassCi.pDependencies = &dependency;
 
-    VK_CHECK(vkCreateRenderPass(m_ctx->device->m_handle, &renderPassCi,
-                                m_ctx->allocator, &m_handle));
-
-    m_ctx->renderPass = this;
+    VK_CHECK(vkCreateRenderPass(m_renderer.getDevice(), &renderPassCi,
+                                m_renderer.getAllocator(), &m_handle));
 }
 
 void RenderPass::destroy() {
     LOG("=Destroy render pass=");
-    vkDestroyRenderPass(m_ctx->device->m_handle, m_handle, m_ctx->allocator);
+    vkDestroyRenderPass(m_renderer.getDevice(), m_handle,
+                        m_renderer.getAllocator());
     m_handle = VK_NULL_HANDLE;
-
-    m_ctx->renderPass = nullptr;
 }
 } // namespace vulkan_proto
