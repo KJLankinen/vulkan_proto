@@ -32,7 +32,8 @@ void Swapchain::create(bool recycle) {
         surfCap.currentExtent.height != 0xFFFFFFFF) {
         m_extent = surfCap.currentExtent;
     } else {
-        VkExtent2D actualExtent = {m_ctx->windowWidth, m_ctx->windowHeight};
+        VkExtent2D actualExtent = {m_ctx->surface->m_windowWidth,
+                                   m_ctx->surface->m_windowHeight};
 
         actualExtent.width = std::max(
             surfCap.minImageExtent.width,
