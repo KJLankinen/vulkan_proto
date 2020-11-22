@@ -93,7 +93,6 @@ void Instance::create() {
     instanceCi.ppEnabledExtensionNames = extensions.data();
 
     VK_CHECK(vkCreateInstance(&instanceCi, m_ctx->allocator, &m_handle));
-    m_ctx->instance = this;
 
 #ifndef NDEBUG
     LOG("=Create debug messenger=");
@@ -103,6 +102,8 @@ void Instance::create() {
              "PFN_vkCreateDebugUtilsMessengerEXT returned nullptr");
     VK_CHECK(f(m_handle, &dbgMsgrCi, m_ctx->allocator, &m_dbgMsgr));
 #endif
+
+    m_ctx->instance = this;
 }
 
 void Instance::destroy() {
@@ -119,5 +120,7 @@ void Instance::destroy() {
     LOG("=Destroy instance=");
     vkDestroyInstance(m_handle, m_ctx->allocator);
     m_handle = VK_NULL_HANDLE;
+
+    m_ctx->instance = nullptr;
 }
 } // namespace vulkan_proto
