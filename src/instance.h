@@ -4,8 +4,8 @@
 
 namespace vulkan_proto {
 struct Instance{
+    VulkanContext *m_ctx = nullptr;
     VkInstance m_handle = VK_NULL_HANDLE;
-    VulkanContext_Temp *m_ctx = nullptr;
 
     VkDebugUtilsMessengerEXT m_dbgMsgr = VK_NULL_HANDLE;
     std::array<const char *, 1> m_validationLayers = {

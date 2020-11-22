@@ -188,14 +188,14 @@ void Swapchain::destroy(VkSwapchainKHR chain) {
     m_ctx->swapchain = nullptr;
 }
 
-static void Swapchain::chooseFormats(VulkanContext *ctx, VkSwapchainKHR chain) {
+void Swapchain::chooseFormats(VulkanContext *ctx, Swapchain &chain) {
     LOG("=Choose swapchain formats=");
     uint32_t formatCount = 0;
     VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(
         ctx->device->m_device, ctx->surface->m_handle, &formatCount, nullptr));
     std::vector<VkSurfaceFormatKHR> surfaceFormats(formatCount);
     VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(
-        ctx->device->m_device, m_ctx->surface->m_handle, &formatCount,
+        ctx->device->m_device, ctx->surface->m_handle, &formatCount,
         surfaceFormats.data()));
 
     if (surfaceFormats.size() == 1 &&

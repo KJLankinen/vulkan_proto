@@ -3,7 +3,7 @@
 
 namespace vulkan_proto {
 struct Device {
-    VulkanContext_Temp *m_ctx = nullptr;
+    VulkanContext *m_ctx = nullptr;
     VkDevice m_handle = VK_NULL_HANDLE;
     VkQueue m_graphicsQueue = VK_NULL_HANDLE;
     VkQueue m_presentQueue = VK_NULL_HANDLE;

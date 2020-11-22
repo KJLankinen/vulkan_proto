@@ -4,7 +4,7 @@
 
 namespace vulkan_proto {
 struct Swapchain {
-    VulkanContext_Temp *m_ctx = nullptr;
+    VulkanContext *m_ctx = nullptr;
     VkSwapchainKHR m_handle = VK_NULL_HANDLE;
 
     std::vector<VkFramebuffer> m_framebuffers;
@@ -23,6 +23,6 @@ struct Swapchain {
     ~Swapchain();
     void create(VulkanContext *ctx, bool recycle = false);
     void destroy(VkSwapchainKHR chain);
-    static void chooseFormats(VulkanContext *ctx, VkSwapchainKHR chain);
+    static void chooseFormats(VulkanContext *ctx, Swapchain &chain);
 };
 }

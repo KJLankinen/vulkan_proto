@@ -4,7 +4,7 @@ namespace vulkan_proto {
 Renderer::Renderer() {}
 Renderer::~Renderer() {}
 
-void Renderer::createTexturSampler() {
+void Renderer::createTextureSampler() {
     LOG("=Create texture sampler=");
     VkSamplerCreateInfo info = {};
     info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -53,14 +53,20 @@ void Renderer::destroySemaphores() {
 }
 
 void Renderer::init() {
+    m_ctx.instance = &m_instance;
+    m_ctx.device = &m_device;
+    m_ctx.surface = &m_surface;
+    m_ctx.swapchain = &m_swapchain;
+    m_ctx.renderPass = &m_renderPass;
+
     m_surface.initWindow();
     m_instance.create(&m_ctx);
     m_surface.create(&m_ctx);
     m_device.create(&m_ctx);
     Swapchain::chooseFormats(&m_ctx, m_swapchain);
     m_renderPass.create(&m_ctx);
-    m_swaphain.create(&m_ctx);
-    createTexturSampler();
+    m_swapchain.create(&m_ctx);
+    createTextureSampler();
     createSemaphores();
 }
 
@@ -71,11 +77,11 @@ void Renderer::terminate() {
 
     destroySemaphores();
     destroyTextureSampler();
-    m_swaphain.destroy(&m_ctx);
-    m_renderPass.destroy(&m_ctx);
-    m_device.destroy(&m_ctx);
-    m_surface.destroy(&m_ctx);
-    m_instance.destroy(&m_ctx);
+    m_swapchain.destroy(m_swapchain.m_handle);
+    m_renderPass.destroy();
+    m_device.destroy();
+    m_surface.destroy();
+    m_instance.destroy();
     m_surface.terminateWindow();
     // flush logger
 }

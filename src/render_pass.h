@@ -4,7 +4,7 @@
 
 namespace vulkan_proto {
 struct RenderPass {
-    VulkanContext_Temp *m_ctx = nullptr;
+    VulkanContext *m_ctx = nullptr;
     VkRenderPass m_handle = VK_NULL_HANDLE;
 
     RenderPass();

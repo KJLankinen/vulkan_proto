@@ -3,7 +3,7 @@
 
 namespace vulkan_proto {
 struct Surface {
-    VulkanContext_Temp *m_ctx = nullptr;
+    VulkanContext *m_ctx = nullptr;
     VkSurfaceKHR m_handle = VK_NULL_HANDLE;
 
     GLFWwindow *m_window = nullptr;
