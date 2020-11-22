@@ -22,6 +22,7 @@ struct Swapchain {
     Swapchain(VulkanContext_Temp *ctx);
     ~Swapchain();
     void create(bool recycle);
-    void destroy();
+    void destroy(VkSwapchainKHR chain);
+    void chooseFormats();
 };
 }

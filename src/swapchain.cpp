@@ -1,7 +1,7 @@
 #include "swapchain.h"
 #include "device.h"
+#include "render_pass.h"
 #include "surface.h"
-//#include "renderpass.h"
 
 namespace vulkan_proto {
 Swapchain::Swapchain(VulkanContext_Temp *ctx) : m_ctx(ctx) {}
@@ -85,28 +85,7 @@ void Swapchain::create(bool recycle) {
     m_handle = newChain;
 
     if (recycle) {
-        for (uint32_t i = 0; i < static_cast<uint32_t>(m_images.size()); ++i) {
-            vkDestroyImageView(m_ctx->device->m_handle, m_views[i],
-                               m_ctx->allocator);
-            vkDestroyFramebuffer(m_ctx->device->m_handle, m_framebuffers[i],
-                                 m_ctx->allocator);
-        }
-        m_images.clear();
-        m_views.clear();
-        m_framebuffers.clear();
-
-        vkDestroySwapchainKHR(m_ctx->device->m_handle, oldChain,
-                              m_ctx->allocator);
-
-        vkDestroyImageView(m_ctx->device->m_handle, m_depthView,
-                           m_ctx->allocator);
-        m_depthView = VK_NULL_HANDLE;
-
-        vkDestroyImage(m_ctx->device->m_handle, m_depthImage, m_ctx->allocator);
-        m_depthImage = VK_NULL_HANDLE;
-
-        vkFreeMemory(m_ctx->device->m_handle, m_depthMemory, m_ctx->allocator);
-        m_depthMemory = VK_NULL_HANDLE;
+        destroy(oldChain);
     }
 
     // Get images
@@ -163,7 +142,7 @@ void Swapchain::create(bool recycle) {
     // Framebuffers
     VkFramebufferCreateInfo framebufferCi = {};
     framebufferCi.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    framebufferCi.renderPass = VK_NULL_HANDLE; // m_ctx->renderPass->m_handle;
+    framebufferCi.renderPass = m_ctx->renderPass->m_handle;
     framebufferCi.width = m_extent.width;
     framebufferCi.height = m_extent.height;
     framebufferCi.layers = 1;
@@ -181,7 +160,7 @@ void Swapchain::create(bool recycle) {
     m_ctx->swapchain = this;
 }
 
-void Swapchain::destroy() {
+void Swapchain::destroy(VkSwapchainKHR chain) {
     LOG("=Destroy swap chain=");
     vkDestroyImageView(m_ctx->device->m_handle, m_depthView, m_ctx->allocator);
     m_depthView = VK_NULL_HANDLE;
@@ -202,7 +181,57 @@ void Swapchain::destroy() {
     }
     m_framebuffers.clear();
 
-    vkDestroySwapchainKHR(m_ctx->device->m_handle, m_handle, m_ctx->allocator);
+    vkDestroySwapchainKHR(m_ctx->device->m_handle, chain, m_ctx->allocator);
     m_ctx->swapchain = nullptr;
+}
+
+void Swapchain::chooseFormats() {
+    LOG("=Choose swapchain formats=");
+
+    uint32_t formatCount = 0;
+    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(m_ctx->device->m_device,
+                                                  m_ctx->surface->m_handle,
+                                                  &formatCount, nullptr));
+    std::vector<VkSurfaceFormatKHR> surfaceFormats(formatCount);
+    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(
+        m_ctx->device->m_device, m_ctx->surface->m_handle, &formatCount,
+        surfaceFormats.data()));
+
+    if (surfaceFormats.size() == 1 &&
+        surfaceFormats[0].format == VK_FORMAT_UNDEFINED)
+        m_surfaceFormat = {VK_FORMAT_B8G8R8A8_UNORM,
+                           VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
+    else if (surfaceFormats.size() > 1) {
+        for (const auto &availableFormat : surfaceFormats) {
+            if (availableFormat.format == VK_FORMAT_B8G8R8A8_UNORM &&
+                availableFormat.colorSpace ==
+                    VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+                m_surfaceFormat = availableFormat;
+                break;
+            }
+        }
+    } else {
+        m_surfaceFormat = surfaceFormats[0];
+    }
+
+    const std::array<VkFormat, 3> candidates = {VK_FORMAT_D32_SFLOAT,
+                                                VK_FORMAT_D32_SFLOAT_S8_UINT,
+                                                VK_FORMAT_D24_UNORM_S8_UINT};
+    const VkFormatFeatureFlags features =
+        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+
+    for (auto &format : candidates) {
+        VkFormatProperties props = {};
+        vkGetPhysicalDeviceFormatProperties(m_ctx->device->m_device, format,
+                                            &props);
+
+        if ((props.optimalTilingFeatures & features) == features) {
+            m_depthFormat = format;
+            break;
+        }
+    }
+
+    THROW_IF(m_depthFormat == VK_FORMAT_UNDEFINED,
+             "Failed to find a supported format!");
 }
 } // namespace vulkan_proto
