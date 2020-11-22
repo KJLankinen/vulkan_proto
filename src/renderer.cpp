@@ -3,7 +3,8 @@
 namespace vulkan_proto {
 Renderer::Renderer()
     : m_instance(*this), m_device(*this), m_surface(*this), m_swapchain(*this),
-      m_renderPass(*this), m_logger("vulkan_proto.log") {}
+      m_renderPass(*this), m_graphicsPipeline(*this),
+      m_logger("vulkan_proto.log") {}
 Renderer::~Renderer() {}
 
 void Renderer::createTextureSampler() {
@@ -52,6 +53,75 @@ void Renderer::destroySemaphores() {
     vkDestroySemaphore(m_device.m_handle, m_imageAvailable, m_allocator);
 }
 
+void Renderer::copyCPUToGPU(const void *srcData, VkDeviceSize sizeInBytes,
+                            VkDeviceMemory stagingMemory,
+                            VkBuffer stagingBuffer, VkBuffer dstBuffer) const {
+    THROW_IF(srcData == nullptr, "Source data is nullptr");
+    THROW_IF(sizeInBytes <= 0, "Size to copy is zero");
+    THROW_IF(stagingMemory == VK_NULL_HANDLE, "Staging memory is null handle");
+    THROW_IF(stagingBuffer == VK_NULL_HANDLE, "Staging buffer is null handle");
+    THROW_IF(dstBuffer == VK_NULL_HANDLE, "Destination buffer is null handle");
+
+    void *data = nullptr;
+    vkMapMemory(m_device.m_handle, stagingMemory, 0, sizeInBytes, 0, &data);
+    memcpy(data, srcData, sizeInBytes);
+    vkUnmapMemory(m_device.m_handle, stagingMemory);
+    copyBuffer(stagingBuffer, dstBuffer, sizeInBytes);
+}
+
+void Renderer::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width,
+                                 uint32_t height) const {
+    VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+    VkBufferImageCopy region = {};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;
+    region.bufferImageHeight = 0;
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = 1;
+    region.imageOffset = {0, 0, 0};
+    region.imageExtent = {width, height, 1};
+    vkCmdCopyBufferToImage(commandBuffer, buffer, image,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+    endSingleTimeCommands(commandBuffer);
+}
+
+void Renderer::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer,
+                          VkDeviceSize size) const {
+    VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+    VkBufferCopy copyRegion = {};
+    copyRegion.srcOffset = 0; // Optional
+    copyRegion.dstOffset = 0; // Optional
+    copyRegion.size = size;
+    vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+    endSingleTimeCommands(commandBuffer);
+}
+
+void Renderer::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
+                            VkMemoryPropertyFlags properties, VkBuffer &buffer,
+                            VkDeviceMemory &bufferMemory) const {
+    VkBufferCreateInfo bufferCI = {};
+    bufferCI.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferCI.size = size;
+    bufferCI.usage = usage;
+    bufferCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    VK_CHECK(
+        vkCreateBuffer(m_device.m_handle, &bufferCI, m_allocator, &buffer));
+
+    VkMemoryRequirements memRequirements;
+    vkGetBufferMemoryRequirements(m_device.m_handle, buffer, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex =
+        findMemoryType(memRequirements.memoryTypeBits, properties);
+    VK_CHECK(vkAllocateMemory(m_device.m_handle, &allocInfo, nullptr,
+                              &bufferMemory));
+    vkBindBufferMemory(m_device.m_handle, buffer, bufferMemory, 0);
+}
+
 void Renderer::createImage(uint32_t width, uint32_t height, uint32_t depth,
                            VkFormat format, VkImageTiling tiling,
                            VkImageUsageFlags usage,
@@ -92,7 +162,6 @@ void Renderer::transitionImageLayout(VkImage image, VkFormat format,
                                      VkImageLayout oldLayout,
                                      VkImageLayout newLayout) const {
     VkCommandBuffer commandBuffer = beginSingleTimeCommands();
-
     VkImageMemoryBarrier barrier = {};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.oldLayout = oldLayout;
@@ -145,7 +214,6 @@ void Renderer::transitionImageLayout(VkImage image, VkFormat format,
 
     vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0,
                          nullptr, 0, nullptr, 1, &barrier);
-
     endSingleTimeCommands(commandBuffer);
 }
 
@@ -203,6 +271,7 @@ void Renderer::endSingleTimeCommands(VkCommandBuffer commandBuffer) const {
 }
 
 void Renderer::init() {
+    nlohmann::json info;
     m_surface.initWindow();
     m_instance.create();
     m_surface.create();
@@ -212,6 +281,7 @@ void Renderer::init() {
     m_swapchain.create();
     createTextureSampler();
     createSemaphores();
+    m_graphicsPipeline.create(info);
 }
 
 void Renderer::terminate() {
@@ -219,6 +289,7 @@ void Renderer::terminate() {
         VK_CHECK(vkDeviceWaitIdle(m_device.m_handle));
     }
 
+    m_graphicsPipeline.destroy();
     destroySemaphores();
     destroyTextureSampler();
     m_swapchain.destroy(getSwapchain());
@@ -227,6 +298,7 @@ void Renderer::terminate() {
     m_surface.destroy();
     m_instance.destroy();
     m_surface.terminateWindow();
+
     m_logger.flush();
 }
 

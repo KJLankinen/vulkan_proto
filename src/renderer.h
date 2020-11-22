@@ -1,5 +1,6 @@
 #pragma once
 #include "device.h"
+#include "graphics_pipeline.h"
 #include "headers.h"
 #include "instance.h"
 #include "logger.h"
@@ -15,12 +16,15 @@ struct Renderer {
     Surface m_surface;
     Swapchain m_swapchain;
     RenderPass m_renderPass;
+    GraphicsPipeline m_graphicsPipeline;
 
     VkAllocationCallbacks *m_allocator = nullptr;
 
     VkSampler m_textureSampler = VK_NULL_HANDLE;
     VkSemaphore m_imageAvailable = VK_NULL_HANDLE;
     VkSemaphore m_renderingFinished = VK_NULL_HANDLE;
+    std::vector<VkPushConstantRange> m_pushConstantRanges;
+    std::vector<VkDescriptorSetLayout> m_descriptorSetLayouts;
 
     mutable Logger m_logger;
 
@@ -37,6 +41,9 @@ struct Renderer {
     const VkSurfaceKHR &getSurface() const { return m_surface.m_handle; }
     const VkSwapchainKHR &getSwapchain() const { return m_swapchain.m_handle; }
     const VkRenderPass &getRenderPass() const { return m_renderPass.m_handle; }
+    const VkPipeline &getGraphicsPipeline() const {
+        return m_graphicsPipeline.m_handle;
+    }
     const VkAllocationCallbacks *getAllocator() const { return m_allocator; }
     const std::array<const char *, 1> &getValidationLayers() const {
         return m_instance.m_validationLayers;
@@ -45,6 +52,7 @@ struct Renderer {
         return m_swapchain.m_surfaceFormat.format;
     }
     const VkFormat &getDepthFormat() const { return m_swapchain.m_depthFormat; }
+    VkExtent2D getSwapchainExtent() const { return m_swapchain.m_extent; }
     VkExtent2D getWindowExtent() const {
         return VkExtent2D{m_surface.m_windowWidth, m_surface.m_windowHeight};
     }
@@ -57,7 +65,24 @@ struct Renderer {
     uint32_t getPresentFamilyIndex() const {
         return (uint32_t)m_device.m_presentFI;
     }
+    const std::vector<VkPushConstantRange> &getPushConstantRanges() const {
+        return m_pushConstantRanges;
+    }
 
+    const std::vector<VkDescriptorSetLayout> &getDescriptorSetLayouts() const {
+        return m_descriptorSetLayouts;
+    }
+
+    void copyCPUToGPU(const void *srcData, VkDeviceSize sizeInBytes,
+                      VkDeviceMemory stagingMemory, VkBuffer stagingBuffer,
+                      VkBuffer dstBuffer) const;
+    void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width,
+                           uint32_t height) const;
+    void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer,
+                    VkDeviceSize size) const;
+    void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
+                      VkMemoryPropertyFlags properties, VkBuffer &buffer,
+                      VkDeviceMemory &bufferMemory) const;
     void createImage(uint32_t width, uint32_t height, uint32_t depth,
                      VkFormat format, VkImageTiling tiling,
                      VkImageUsageFlags usage, VkMemoryPropertyFlags properties,

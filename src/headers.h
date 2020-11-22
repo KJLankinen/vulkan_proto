@@ -2,6 +2,7 @@
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #define GLFW_INCLUDE_VULKAN
+#include "json.hpp"
 #include "util.h"
 #include <GLFW/glfw3.h>
 #include <array>

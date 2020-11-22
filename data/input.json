@@ -1,0 +1,15 @@
+{
+    "shaders" : [
+        {
+            "entryPoint" : "main",
+            "path" : "shaders/test_vs.glsl",
+            "type" : "vertex"
+        },
+        {
+            "entryPoint" : "main",
+            "path" : "shaders/test_fs.glsl",
+            "type" : "fragment"
+        }
+    ],
+    "data_path": "~/Code/vulkan_proto/data/"
+}

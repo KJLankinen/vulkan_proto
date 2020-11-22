@@ -1,11 +1,11 @@
 BIN_PREFIX := bin
 SRC_DIR := src
-INCL :=
-OBJ_NAMES := device.o instance.o main.o render_pass.o renderer.o surface.o swapchain.o
+INCL := -Iincl/
+OBJ_NAMES := device.o instance.o main.o render_pass.o renderer.o surface.o swapchain.o graphics_pipeline.o
 OBJS = $(addprefix $(BIN_DIR)/, $(OBJ_NAMES))
 HEADERS := $(wildcard $(SRC_DIR)/*.h)
 EXEC = $(BIN_DIR)/vupro
-LIBS := -lvulkan -lglfw
+LIBS := -lvulkan -lglfw -lglslang
 override CFLAGS += -std=c++17 -Wall $(INCL) $(OPTIM) $(DEFINES)
 LFLAGS :=
 
