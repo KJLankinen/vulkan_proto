@@ -121,4 +121,6 @@ void Instance::destroy() {
     vkDestroyInstance(m_handle, m_renderer.getAllocator());
     m_handle = VK_NULL_HANDLE;
 }
+
+Logger &Instance::getLogger() { return m_renderer.getLogger(); }
 } // namespace vulkan_proto

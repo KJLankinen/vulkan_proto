@@ -191,32 +191,32 @@ void Swapchain::destroy(VkSwapchainKHR chain) {
                           m_renderer.getAllocator());
 }
 
-void Swapchain::chooseFormats(Swapchain &chain) {
+void Swapchain::chooseFormats() {
     LOG("=Choose swapchain formats=");
     uint32_t formatCount = 0;
     VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(
-        chain.m_renderer.getPhysicalDevice(), chain.m_renderer.getSurface(),
-        &formatCount, nullptr));
+        m_renderer.getPhysicalDevice(), m_renderer.getSurface(), &formatCount,
+        nullptr));
     std::vector<VkSurfaceFormatKHR> surfaceFormats(formatCount);
     VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(
-        chain.m_renderer.getPhysicalDevice(), chain.m_renderer.getSurface(),
-        &formatCount, surfaceFormats.data()));
+        m_renderer.getPhysicalDevice(), m_renderer.getSurface(), &formatCount,
+        surfaceFormats.data()));
 
     if (surfaceFormats.size() == 1 &&
         surfaceFormats[0].format == VK_FORMAT_UNDEFINED)
-        chain.m_surfaceFormat = {VK_FORMAT_B8G8R8A8_UNORM,
-                                 VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
+        m_surfaceFormat = {VK_FORMAT_B8G8R8A8_UNORM,
+                           VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
     else if (surfaceFormats.size() > 1) {
         for (const auto &availableFormat : surfaceFormats) {
             if (availableFormat.format == VK_FORMAT_B8G8R8A8_UNORM &&
                 availableFormat.colorSpace ==
                     VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-                chain.m_surfaceFormat = availableFormat;
+                m_surfaceFormat = availableFormat;
                 break;
             }
         }
     } else {
-        chain.m_surfaceFormat = surfaceFormats[0];
+        m_surfaceFormat = surfaceFormats[0];
     }
 
     const std::array<VkFormat, 3> candidates = {VK_FORMAT_D32_SFLOAT,
@@ -227,16 +227,18 @@ void Swapchain::chooseFormats(Swapchain &chain) {
 
     for (auto &format : candidates) {
         VkFormatProperties props = {};
-        vkGetPhysicalDeviceFormatProperties(
-            chain.m_renderer.getPhysicalDevice(), format, &props);
+        vkGetPhysicalDeviceFormatProperties(m_renderer.getPhysicalDevice(),
+                                            format, &props);
 
         if ((props.optimalTilingFeatures & features) == features) {
-            chain.m_depthFormat = format;
+            m_depthFormat = format;
             break;
         }
     }
 
-    THROW_IF(chain.m_depthFormat == VK_FORMAT_UNDEFINED,
+    THROW_IF(m_depthFormat == VK_FORMAT_UNDEFINED,
              "Failed to find a supported format!");
 }
+
+Logger &Swapchain::getLogger() { return m_renderer.getLogger(); }
 } // namespace vulkan_proto

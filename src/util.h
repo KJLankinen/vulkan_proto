@@ -17,9 +17,7 @@
     vulkan_proto::throwIf(condition, FORMAT_STR(__VA_ARGS__), __FILE__,        \
                           __LINE__)
 
-#define LOG(...)                                                               \
-    printf(__VA_ARGS__);                                                       \
-    printf("\n")
+#define LOG(...) getLogger().log(FORMAT_STR(__VA_ARGS__));
 
 namespace vulkan_proto {
 template <typename... Args>

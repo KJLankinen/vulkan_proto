@@ -4,6 +4,7 @@
 
 namespace vulkan_proto {
 struct Renderer;
+struct Logger;
 struct Swapchain {
     const Renderer &m_renderer;
     VkSwapchainKHR m_handle = VK_NULL_HANDLE;
@@ -24,6 +25,7 @@ struct Swapchain {
     ~Swapchain();
     void create(bool recycle = false);
     void destroy(VkSwapchainKHR chain);
-    static void chooseFormats(Swapchain &chain);
+    void chooseFormats();
+    Logger &getLogger();
 };
 }

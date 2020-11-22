@@ -3,7 +3,7 @@
 namespace vulkan_proto {
 Renderer::Renderer()
     : m_instance(*this), m_device(*this), m_surface(*this), m_swapchain(*this),
-      m_renderPass(*this) {}
+      m_renderPass(*this), m_logger("vulkan_proto.log") {}
 Renderer::~Renderer() {}
 
 void Renderer::createTextureSampler() {
@@ -26,13 +26,13 @@ void Renderer::createTextureSampler() {
     info.minLod = 0.0f;
     info.maxLod = 0.0f;
 
-    VK_CHECK(
-        vkCreateSampler(getDevice(), &info, m_allocator, &m_textureSampler));
+    VK_CHECK(vkCreateSampler(m_device.m_handle, &info, m_allocator,
+                             &m_textureSampler));
 }
 
 void Renderer::destroyTextureSampler() {
     LOG("=Destroy texture sampler=");
-    vkDestroySampler(getDevice(), m_textureSampler, m_allocator);
+    vkDestroySampler(m_device.m_handle, m_textureSampler, m_allocator);
 }
 
 void Renderer::createSemaphores() {
@@ -40,16 +40,16 @@ void Renderer::createSemaphores() {
     VkSemaphoreCreateInfo semaphoreCi = {};
     semaphoreCi.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
-    VK_CHECK(vkCreateSemaphore(getDevice(), &semaphoreCi, m_allocator,
+    VK_CHECK(vkCreateSemaphore(m_device.m_handle, &semaphoreCi, m_allocator,
                                &m_imageAvailable));
-    VK_CHECK(vkCreateSemaphore(getDevice(), &semaphoreCi, m_allocator,
+    VK_CHECK(vkCreateSemaphore(m_device.m_handle, &semaphoreCi, m_allocator,
                                &m_renderingFinished));
 }
 
 void Renderer::destroySemaphores() {
     LOG("=Destroy semaphores=");
-    vkDestroySemaphore(getDevice(), m_renderingFinished, m_allocator);
-    vkDestroySemaphore(getDevice(), m_imageAvailable, m_allocator);
+    vkDestroySemaphore(m_device.m_handle, m_renderingFinished, m_allocator);
+    vkDestroySemaphore(m_device.m_handle, m_imageAvailable, m_allocator);
 }
 
 void Renderer::createImage(uint32_t width, uint32_t height, uint32_t depth,
@@ -71,10 +71,10 @@ void Renderer::createImage(uint32_t width, uint32_t height, uint32_t depth,
     imageInfo.usage = usage;
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    VK_CHECK(vkCreateImage(getDevice(), &imageInfo, m_allocator, &image));
+    VK_CHECK(vkCreateImage(m_device.m_handle, &imageInfo, m_allocator, &image));
 
     VkMemoryRequirements memRequirements;
-    vkGetImageMemoryRequirements(getDevice(), image, &memRequirements);
+    vkGetImageMemoryRequirements(m_device.m_handle, image, &memRequirements);
 
     VkMemoryAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -82,9 +82,10 @@ void Renderer::createImage(uint32_t width, uint32_t height, uint32_t depth,
     allocInfo.memoryTypeIndex =
         findMemoryType(memRequirements.memoryTypeBits, properties);
 
-    VK_CHECK(vkAllocateMemory(getDevice(), &allocInfo, nullptr, &imageMemory));
+    VK_CHECK(
+        vkAllocateMemory(m_device.m_handle, &allocInfo, nullptr, &imageMemory));
 
-    VK_CHECK(vkBindImageMemory(getDevice(), image, imageMemory, 0));
+    VK_CHECK(vkBindImageMemory(m_device.m_handle, image, imageMemory, 0));
 }
 
 void Renderer::transitionImageLayout(VkImage image, VkFormat format,
@@ -171,7 +172,8 @@ VkCommandBuffer Renderer::beginSingleTimeCommands() const {
     allocInfo.commandBufferCount = 1;
 
     VkCommandBuffer commandBuffer;
-    VK_CHECK(vkAllocateCommandBuffers(getDevice(), &allocInfo, &commandBuffer));
+    VK_CHECK(vkAllocateCommandBuffers(m_device.m_handle, &allocInfo,
+                                      &commandBuffer));
 
     VkCommandBufferBeginInfo beginInfo = {};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -195,7 +197,7 @@ void Renderer::endSingleTimeCommands(VkCommandBuffer commandBuffer) const {
                                VK_NULL_HANDLE));
         VK_CHECK(vkQueueWaitIdle(m_device.m_graphicsQueue));
 
-        vkFreeCommandBuffers(getDevice(), m_device.m_commandPool, 1,
+        vkFreeCommandBuffers(m_device.m_handle, m_device.m_commandPool, 1,
                              &commandBuffer);
     }
 }
@@ -205,7 +207,7 @@ void Renderer::init() {
     m_instance.create();
     m_surface.create();
     m_device.create();
-    Swapchain::chooseFormats(m_swapchain);
+    m_swapchain.chooseFormats();
     m_renderPass.create();
     m_swapchain.create();
     createTextureSampler();
@@ -213,8 +215,8 @@ void Renderer::init() {
 }
 
 void Renderer::terminate() {
-    if (getDevice() != VK_NULL_HANDLE) {
-        VK_CHECK(vkDeviceWaitIdle(getDevice()));
+    if (m_device.m_handle != VK_NULL_HANDLE) {
+        VK_CHECK(vkDeviceWaitIdle(m_device.m_handle));
     }
 
     destroySemaphores();
@@ -225,7 +227,7 @@ void Renderer::terminate() {
     m_surface.destroy();
     m_instance.destroy();
     m_surface.terminateWindow();
-    // flush logger
+    m_logger.flush();
 }
 
 void Renderer::run() {

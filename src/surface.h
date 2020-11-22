@@ -3,6 +3,7 @@
 
 namespace vulkan_proto {
 struct Renderer;
+struct Logger;
 struct Surface {
     const Renderer &m_renderer;
     VkSurfaceKHR m_handle = VK_NULL_HANDLE;
@@ -17,5 +18,6 @@ struct Surface {
     void destroy();
     void initWindow();
     void terminateWindow();
+    Logger &getLogger();
 };
 }

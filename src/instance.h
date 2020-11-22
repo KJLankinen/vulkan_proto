@@ -4,6 +4,7 @@
 
 namespace vulkan_proto {
 struct Renderer;
+struct Logger;
 struct Instance{
     const Renderer &m_renderer;
 
@@ -16,5 +17,6 @@ struct Instance{
     ~Instance();
     void create();
     void destroy();
+    Logger &getLogger();
 };
 } // namespace vulkan_proto

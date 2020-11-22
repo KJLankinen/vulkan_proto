@@ -2,6 +2,7 @@
 #include "device.h"
 #include "headers.h"
 #include "instance.h"
+#include "logger.h"
 #include "render_pass.h"
 #include "surface.h"
 #include "swapchain.h"
@@ -20,6 +21,8 @@ struct Renderer {
     VkSampler m_textureSampler = VK_NULL_HANDLE;
     VkSemaphore m_imageAvailable = VK_NULL_HANDLE;
     VkSemaphore m_renderingFinished = VK_NULL_HANDLE;
+
+    mutable Logger m_logger;
 
   public:
     Renderer();
@@ -66,6 +69,7 @@ struct Renderer {
                             VkMemoryPropertyFlags properties) const;
     VkCommandBuffer beginSingleTimeCommands() const;
     void endSingleTimeCommands(VkCommandBuffer commandBuffer) const;
+    Logger &getLogger() const { return m_logger; }
 
   private:
     void createTextureSampler();

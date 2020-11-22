@@ -80,4 +80,6 @@ void RenderPass::destroy() {
                         m_renderer.getAllocator());
     m_handle = VK_NULL_HANDLE;
 }
+
+Logger &RenderPass::getLogger() { return m_renderer.getLogger(); }
 } // namespace vulkan_proto

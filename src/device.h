@@ -3,6 +3,7 @@
 
 namespace vulkan_proto {
 struct Renderer;
+struct Logger;
 struct Device {
     const Renderer &m_renderer;
     VkDevice m_handle = VK_NULL_HANDLE;
@@ -22,5 +23,6 @@ struct Device {
     ~Device();
     void create();
     void destroy();
+    Logger &getLogger();
 };
 }

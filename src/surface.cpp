@@ -36,4 +36,6 @@ void Surface::terminateWindow() {
     LOG("=Terminate window=");
     glfwTerminate();
 }
+
+Logger &Surface::getLogger() { return m_renderer.getLogger(); }
 } // namespace vulkan_proto

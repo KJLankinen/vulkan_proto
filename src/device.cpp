@@ -279,4 +279,6 @@ void Device::destroy() {
     m_commandPool = VK_NULL_HANDLE;
     m_device = VK_NULL_HANDLE;
 }
+
+Logger &Device::getLogger() { return m_renderer.getLogger(); }
 } // namespace vulkan_proto
