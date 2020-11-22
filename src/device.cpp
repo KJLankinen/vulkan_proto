@@ -3,11 +3,12 @@
 #include "surface.h"
 
 namespace vulkan_proto {
-Device::Device(VulkanContext_Temp *ctx) : m_ctx(ctx) {}
+Device::Device() {}
 Device::~Device() {}
 
-void Device::create() {
+void Device::create(VulkanContext *ctx) {
     LOG("=Create physical device=");
+    m_ctx = ctx;
     uint32_t deviceCount = 0;
     VK_CHECK(vkEnumeratePhysicalDevices(m_ctx->instance->m_handle, &deviceCount,
                                         nullptr));

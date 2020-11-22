@@ -4,12 +4,14 @@
 #include "surface.h"
 
 namespace vulkan_proto {
-Swapchain::Swapchain(VulkanContext_Temp *ctx) : m_ctx(ctx) {}
+Swapchain::Swapchain() {}
 Swapchain::~Swapchain() {}
 
-void Swapchain::create(bool recycle) {
+void Swapchain::create(VulkanContext *ctx, bool recycle) {
     LOG("=Create swap chain=");
-
+    if (recycle == false) {
+        m_ctx = ctx;
+    }
     uint32_t modeCount = 0;
     VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(m_ctx->device->m_device,
                                                        m_ctx->surface->m_handle,
@@ -186,33 +188,31 @@ void Swapchain::destroy(VkSwapchainKHR chain) {
     m_ctx->swapchain = nullptr;
 }
 
-void Swapchain::chooseFormats() {
+static void Swapchain::chooseFormats(VulkanContext *ctx, VkSwapchainKHR chain) {
     LOG("=Choose swapchain formats=");
-
     uint32_t formatCount = 0;
-    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(m_ctx->device->m_device,
-                                                  m_ctx->surface->m_handle,
-                                                  &formatCount, nullptr));
+    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(
+        ctx->device->m_device, ctx->surface->m_handle, &formatCount, nullptr));
     std::vector<VkSurfaceFormatKHR> surfaceFormats(formatCount);
     VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(
-        m_ctx->device->m_device, m_ctx->surface->m_handle, &formatCount,
+        ctx->device->m_device, m_ctx->surface->m_handle, &formatCount,
         surfaceFormats.data()));
 
     if (surfaceFormats.size() == 1 &&
         surfaceFormats[0].format == VK_FORMAT_UNDEFINED)
-        m_surfaceFormat = {VK_FORMAT_B8G8R8A8_UNORM,
-                           VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
+        chain.m_surfaceFormat = {VK_FORMAT_B8G8R8A8_UNORM,
+                                 VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
     else if (surfaceFormats.size() > 1) {
         for (const auto &availableFormat : surfaceFormats) {
             if (availableFormat.format == VK_FORMAT_B8G8R8A8_UNORM &&
                 availableFormat.colorSpace ==
                     VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-                m_surfaceFormat = availableFormat;
+                chain.m_surfaceFormat = availableFormat;
                 break;
             }
         }
     } else {
-        m_surfaceFormat = surfaceFormats[0];
+        chain.m_surfaceFormat = surfaceFormats[0];
     }
 
     const std::array<VkFormat, 3> candidates = {VK_FORMAT_D32_SFLOAT,
@@ -223,16 +223,16 @@ void Swapchain::chooseFormats() {
 
     for (auto &format : candidates) {
         VkFormatProperties props = {};
-        vkGetPhysicalDeviceFormatProperties(m_ctx->device->m_device, format,
+        vkGetPhysicalDeviceFormatProperties(ctx->device->m_device, format,
                                             &props);
 
         if ((props.optimalTilingFeatures & features) == features) {
-            m_depthFormat = format;
+            chain.m_depthFormat = format;
             break;
         }
     }
 
-    THROW_IF(m_depthFormat == VK_FORMAT_UNDEFINED,
+    THROW_IF(chain.m_depthFormat == VK_FORMAT_UNDEFINED,
              "Failed to find a supported format!");
 }
 } // namespace vulkan_proto

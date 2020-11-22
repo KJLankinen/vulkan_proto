@@ -1,40 +1,30 @@
 #pragma once
-#include "data_types.h"
-#include "util.h"
-#include <array>
-#include <assert.h>
-#include <cstring>
-#include <fstream>
-#include <glm/glm.hpp>
-#include <iostream>
-#include <set>
-#include <sstream>
-#include <string>
+#include "device.h"
+#include "headers.h"
+#include "instance.h"
+#include "render_pass.h"
+#include "surface.h"
+#include "swapchain.h"
 
 namespace vulkan_proto {
+VulkanContext m_ctx = {};
+Instance m_instance = {};
+Device m_device = {};
+Surface m_surface = {};
+Swapchain m_swapchain = {};
+RenderPass m_renderPass = {};
 
-void init(VulkanContext &vkc, Log &log, GLFWwindow **window, uint32_t ww,
-          uint32_t wh);
-void initGLFW(GLFWwindow **window, uint32_t ww, uint32_t wh, Log &log);
-void createInstance(VulkanContext &vkc, Log &log);
-void createDevice(VulkanContext &vkc, Log &log);
-void createRenderPass(VulkanContext &vkc, Log &log, bool recycle);
-void createSwapchain(VulkanContext &vkc, Log &log, uint32_t ww, uint32_t wh,
-                     bool recycle);
-void pickSwapchainFormats(VulkanContext &vkc, Log &log);
-void createImage(VulkanContext &vkc, Log &log, uint32_t width, uint32_t height,
-                 uint32_t depth, VkFormat format, VkImageTiling tiling,
-                 VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
-                 VkImage &image, VkDeviceMemory &imageMemory);
-uint32_t findMemoryType(VulkanContext &vkc, Log &log, uint32_t typeFilter,
-                        VkMemoryPropertyFlags properties);
-void transitionImageLayout(VulkanContext &vkc, Log &log, VkImage image,
-                           VkFormat format, VkImageLayout oldLayout,
-                           VkImageLayout newLayout);
-VkCommandBuffer beginSingleTimeCommands(VulkanContext &vkc, Log &log);
-void endSingleTimeCommands(VulkanContext &vkc, Log &log,
-                           VkCommandBuffer commandBuffer);
+VkSampler m_textureSampler = VK_NULL_HANDLE;
+VkSemaphore m_imageAvailable = VK_NULL_HANDLE;
+VkSemaphore m_renderingFinished = VK_NULL_HANDLE;
+
+Renderer();
+~Renderer();
+void createTexturSampler();
+void destroyTexturSampler();
+void createSemaphores();
+void destroySemaphores();
+void init();
+void terminate();
 void run();
-void terminate(VulkanContext &vkc, Log &log, GLFWwindow *window);
-void terminateGLFW(GLFWwindow *window, Log &log);
 } // namespace vulkan_proto

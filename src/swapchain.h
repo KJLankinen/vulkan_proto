@@ -19,10 +19,10 @@ struct Swapchain {
     VkSurfaceFormatKHR m_surfaceFormat = {};
     VkExtent2D m_extent = {};
 
-    Swapchain(VulkanContext_Temp *ctx);
+    Swapchain();
     ~Swapchain();
-    void create(bool recycle);
+    void create(VulkanContext *ctx, bool recycle = false);
     void destroy(VkSwapchainKHR chain);
-    void chooseFormats();
+    static void chooseFormats(VulkanContext *ctx, VkSwapchainKHR chain);
 };
 }

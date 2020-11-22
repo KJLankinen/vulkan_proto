@@ -11,9 +11,9 @@ struct Instance{
     std::array<const char *, 1> m_validationLayers = {
         "VK_LAYER_KHRONOS_validation"};
 
-    Instance(VulkanContext_Temp *ctx);
+    Instance();
     ~Instance();
-    void create();
+    void create(VulkanContext *ctx);
     void destroy();
 };
 } // namespace vulkan_proto

@@ -19,12 +19,13 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
 } // namespace
 
 namespace vulkan_proto {
-Instance::Instance(VulkanContext_Temp *ctx) : m_ctx(ctx) {}
+Instance::Instance() {}
 
 Instance::~Instance() {}
 
-void Instance::create() {
+void Instance::create(VulkanContext *ctx) {
     LOG("=Create instance=");
+    m_ctx = ctx;
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.pApplicationName = "Vulkan prototype";

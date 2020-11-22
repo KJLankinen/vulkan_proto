@@ -1,7 +1,7 @@
 BIN_PREFIX := bin
 SRC_DIR := src
 INCL :=
-OBJ_NAMES := main.o renderer.o
+OBJ_NAMES := device.o instance.o main.o render_pass.o renderer.o surface.o swapchain.o
 OBJS = $(addprefix $(BIN_DIR)/, $(OBJ_NAMES))
 HEADERS := $(wildcard $(SRC_DIR)/*.h)
 EXEC = $(BIN_DIR)/vupro

@@ -10,9 +10,9 @@ struct Surface {
     uint32_t m_windowWidth = 800;
     uint32_t m_windowHeight = 600;
 
-    Surface(VulkanContext_Temp *ctx);
+    Surface();
     ~Surface();
-    void create();
+    void create(VulkanContext *ctx);
     void destroy();
     void initWindow();
     void terminateWindow();

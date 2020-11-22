@@ -17,9 +17,9 @@ struct Device {
     std::array<const char *, 1> m_requiredExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
-    Device(VulkanContext_Temp *ctx);
+    Device();
     ~Device();
-    void create();
+    void create(VulkanContext *ctx);
     void destroy();
     void createImage(uint32_t width, uint32_t height, uint32_t depth,
                      VkFormat format, VkImageTiling tiling,

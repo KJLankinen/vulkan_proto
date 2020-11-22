@@ -3,13 +3,15 @@
 #include "swapchain.h"
 
 namespace vulkan_proto {
-RenderPass::RenderPass(VulkanContext_Temp *ctx) : m_ctx(ctx) {}
+RenderPass::RenderPass() {}
 RenderPass::~RenderPass() {}
 
-void RenderPass::create(bool recycle) {
+void RenderPass::create(VulkanContext *ctx, bool recycle) {
     LOG("=Create render pass=");
     if (recycle) {
         destroy();
+    } else {
+        m_ctx = ctx;
     }
     VkAttachmentDescription colorAttchDes = {};
     colorAttchDes.flags = 0;

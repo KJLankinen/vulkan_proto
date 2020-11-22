@@ -2,11 +2,12 @@
 #include "instance.h"
 
 namespace vulkan_proto {
-Surface::Surface(VulkanContext_Temp *ctx) : m_ctx(ctx) {}
+Surface::Surface() {}
 Surface::~Surface() {}
 
-void Surface::create() {
+void Surface::create(VulkanContext *ctx) {
     LOG("=Create surface=");
+    m_ctx = ctx;
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     m_window = glfwCreateWindow(m_windowWidth, m_windowHeight, "Vulkan window",
                                 nullptr, nullptr);
@@ -29,12 +30,12 @@ void Surface::destroy() {
 }
 
 void Surface::initWindow() {
-    LOG("=Init GLFW=");
+    LOG("=Init window=");
     glfwInit();
 }
 
 void Surface::terminateWindow() {
-    LOG("=Terminate GLFW=");
+    LOG("=Terminate window=");
     glfwTerminate();
 }
 } // namespace vulkan_proto

@@ -9,7 +9,7 @@ struct Surface;
 struct Swapchain;
 struct RenderPass;
 
-struct VulkanContext_Temp {
+struct VulkanContext {
     Instance *instance = nullptr;
     Device *device = nullptr;
     Surface *surface = nullptr;
