@@ -11,5 +11,16 @@
             "type" : "fragment"
         }
     ],
-    "data_path": "/home/hunaja/Code/vulkan_proto/data/"
+    "data_path": "/home/hunaja/Code/vulkan_proto/data/",
+    "models": {
+        "path" : "models/",
+        "objs" : [
+            {
+                "mesh" : "viking_room.obj",
+                "textures" : [
+                    "viking_room.png"
+                ]
+            }
+        ]
+    }
 }

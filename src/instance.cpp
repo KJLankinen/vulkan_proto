@@ -7,13 +7,14 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT messageType,
     const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *userData) {
-    // if (userData != nullptr) {
-    //    vulkan_proto::Log &log = *static_cast<vulkan_proto::Log *>(userData);
-    //    LOG("validation layer: %s", pCallbackData->pMessage);
-    //} else {
-    //    fprintf(stderr, "validation layer: %s", pCallbackData->pMessage);
-    //}
-    fprintf(stderr, "validation layer: %s", pCallbackData->pMessage);
+    if (userData != nullptr) {
+        vulkan_proto::Logger *logger =
+            static_cast<vulkan_proto::Logger *>(userData);
+        logger->log(
+            FORMAT_STR("validation layer: %s", pCallbackData->pMessage));
+    } else {
+        fprintf(stderr, "validation layer: %s\n", pCallbackData->pMessage);
+    }
     return false;
 }
 #endif
@@ -85,7 +86,7 @@ void Instance::create() {
                             VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
                             VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
     dbgMsgrCi.pfnUserCallback = debugCallback;
-    dbgMsgrCi.pUserData = nullptr; // static_cast<void *>(&log);
+    dbgMsgrCi.pUserData = static_cast<void *>(&getLogger());
 
     instanceCi.pNext = &dbgMsgrCi;
 #endif

@@ -84,21 +84,21 @@ void GraphicsPipeline::create(bool recycle) {
     inputBinding.stride = 32;
     inputBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    std::vector<VkVertexInputAttributeDescription> inputAttributes;
+    std::vector<VkVertexInputAttributeDescription> inputAttributes(3);
     inputAttributes[0].location = 0;
     inputAttributes[0].binding = inputBinding.binding;
     inputAttributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
     inputAttributes[0].offset = 0;
 
-    inputAttributes[0].location = 1;
-    inputAttributes[0].binding = inputBinding.binding;
-    inputAttributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-    inputAttributes[0].offset = 12;
+    inputAttributes[1].location = 1;
+    inputAttributes[1].binding = inputBinding.binding;
+    inputAttributes[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+    inputAttributes[1].offset = 12;
 
-    inputAttributes[0].location = 2;
-    inputAttributes[0].binding = inputBinding.binding;
-    inputAttributes[0].format = VK_FORMAT_R32G32_SFLOAT;
-    inputAttributes[0].offset = 24;
+    inputAttributes[2].location = 2;
+    inputAttributes[2].binding = inputBinding.binding;
+    inputAttributes[2].format = VK_FORMAT_R32G32_SFLOAT;
+    inputAttributes[2].offset = 24;
 
     VkPipelineVertexInputStateCreateInfo vertexInputCI = {};
     vertexInputCI.sType =
@@ -356,8 +356,7 @@ GraphicsPipeline::createShaderModuleFromGLSL(std::string &&filename,
     shader.setEnvClient(glslang::EShClientVulkan, vulkanVersion);
     shader.setEnvTarget(glslang::EShTargetSpv, targetVersion);
 
-    // TODO
-    TBuiltInResource resources = {}; // = glslang::DefaultTBuiltInResource;
+    TBuiltInResource resources = DefaultTBuiltInResource;
     EShMessages messages = (EShMessages)(EShMsgSpvRules | EShMsgVulkanRules);
     std::string tempStr;
 

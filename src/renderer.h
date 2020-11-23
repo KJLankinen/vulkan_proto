@@ -4,6 +4,7 @@
 #include "headers.h"
 #include "instance.h"
 #include "logger.h"
+#include "model.h"
 #include "render_pass.h"
 #include "surface.h"
 #include "swapchain.h"
@@ -25,6 +26,7 @@ struct Renderer {
     VkSemaphore m_renderingFinished = VK_NULL_HANDLE;
     std::vector<VkPushConstantRange> m_pushConstantRanges;
     std::vector<VkDescriptorSetLayout> m_descriptorSetLayouts;
+    std::vector<Model> m_models;
 
     mutable Logger m_logger;
 
@@ -116,6 +118,7 @@ struct Renderer {
     Logger &getLogger() const { return m_logger; }
 
   private:
+    void createModels();
     void createTextureSampler();
     void destroyTextureSampler();
     void createSemaphores();

@@ -8,7 +8,6 @@ Renderer::Renderer()
 Renderer::~Renderer() {}
 
 void Renderer::init() {
-    nlohmann::json info;
     m_surface.initWindow();
     m_instance.create();
     m_surface.create();
@@ -18,7 +17,8 @@ void Renderer::init() {
     m_swapchain.create();
     createTextureSampler();
     createSemaphores();
-    m_graphicsPipeline.create();
+    // m_graphicsPipeline.create();
+    createModels();
 }
 
 void Renderer::terminate() {
@@ -26,7 +26,10 @@ void Renderer::terminate() {
         VK_CHECK(vkDeviceWaitIdle(m_device.m_handle));
     }
 
-    m_graphicsPipeline.destroy();
+    for (auto &model : m_models) {
+        model.destroy();
+    }
+    // m_graphicsPipeline.destroy();
     destroySemaphores();
     destroyTextureSampler();
     m_swapchain.destroy(getSwapchain());
@@ -57,6 +60,17 @@ void Renderer::run(const char *inputFileName) {
     }
 
     terminate();
+}
+
+void Renderer::createModels() {
+    std::string modelsPath(m_programInput.at("data_path").get<std::string>() +
+                           m_programInput.at("models")
+                               .at("path")
+                               .get<std::string>());
+    for (const auto &it : m_programInput.at("models").at("objs")) {
+        m_models.push_back(Model(*this));
+        m_models.back().create(modelsPath.c_str(), it);
+    }
 }
 
 void Renderer::createTextureSampler() {

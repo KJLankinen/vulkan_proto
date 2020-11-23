@@ -10,6 +10,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <glm/glm.hpp>
 #include <iostream>
 #include <set>
 #include <sstream>
