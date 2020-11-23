@@ -28,6 +28,15 @@ void Model::create(const char *root, const nlohmann::json &obj) {
                                 VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                             m_uniformBuffer.buffer, m_uniformBuffer.memory);
+
+    m_modelMatrix *= glm::scale(
+        glm::mat4(1.0f), glm::vec3(obj.at("scale").at("x").get<float>(),
+                                   obj.at("scale").at("y").get<float>(),
+                                   obj.at("scale").at("z").get<float>()));
+    m_modelMatrix = glm::translate(
+        m_modelMatrix, glm::vec3(obj.at("position").at("x").get<float>(),
+                                 obj.at("position").at("y").get<float>(),
+                                 obj.at("position").at("z").get<float>()));
 }
 
 void Model::destroy() {

@@ -277,7 +277,6 @@ void Renderer::updateUniformBuffers() {
 
     for (auto &model : m_models) {
         glm::mat4 modelMatrix = model.m_modelMatrix;
-        modelMatrix *= glm::scale(glm::mat4(1.0f), glm::vec3(10.0f));
         modelMatrix = vp * modelMatrix;
         copyCPUToGPU(reinterpret_cast<const void *>(&modelMatrix),
                      (VkDeviceSize)sizeof(modelMatrix),
