@@ -1,7 +1,6 @@
 #include "device.h"
 #include "instance.h"
 #include "renderer.h"
-#include "surface.h"
 
 namespace vulkan_proto {
 Device::Device(Renderer &renderer) : m_renderer(renderer) {}

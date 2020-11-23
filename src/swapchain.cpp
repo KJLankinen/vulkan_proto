@@ -2,7 +2,6 @@
 #include "device.h"
 #include "render_pass.h"
 #include "renderer.h"
-#include "surface.h"
 
 namespace vulkan_proto {
 Swapchain::Swapchain(Renderer &renderer) : m_renderer(renderer) {}

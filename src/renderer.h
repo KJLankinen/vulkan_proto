@@ -7,7 +7,6 @@
 #include "logger.h"
 #include "model.h"
 #include "render_pass.h"
-#include "surface.h"
 #include "swapchain.h"
 
 namespace vulkan_proto {
@@ -15,10 +14,11 @@ struct Renderer {
   private:
     Instance m_instance;
     Device m_device;
-    Surface m_surface;
     Swapchain m_swapchain;
     RenderPass m_renderPass;
     GraphicsPipeline m_graphicsPipeline;
+
+    VkSurfaceKHR m_surface = VK_NULL_HANDLE;
 
     VkAllocationCallbacks *m_allocator = nullptr;
 
@@ -39,7 +39,10 @@ struct Renderer {
 
     Camera m_camera;
     mutable Logger m_logger;
-    mutable bool m_windowResized = false;
+
+    GLFWwindow *m_window = nullptr;
+    uint32_t m_windowWidth = 800;
+    uint32_t m_windowHeight = 600;
 
     nlohmann::json m_programInput;
     std::string m_dataPath;
@@ -48,8 +51,6 @@ struct Renderer {
     Renderer();
     ~Renderer();
     void run(const char *inputFileName);
-
-    void windowResized() const { m_windowResized = true; }
 
     const char *getDataPath() const { return m_dataPath.c_str(); }
 
@@ -63,7 +64,7 @@ struct Renderer {
         return m_device.m_device;
     }
 
-    const VkSurfaceKHR &getSurface() const { return m_surface.m_handle; }
+    const VkSurfaceKHR &getSurface() const { return m_surface; }
 
     const VkSwapchainKHR &getSwapchain() const { return m_swapchain.m_handle; }
 
@@ -84,7 +85,7 @@ struct Renderer {
     VkExtent2D getSwapchainExtent() const { return m_swapchain.m_extent; }
 
     VkExtent2D getWindowExtent() const {
-        return VkExtent2D{m_surface.m_windowWidth, m_surface.m_windowHeight};
+        return VkExtent2D{m_windowWidth, m_windowHeight};
     }
 
     const VkSurfaceCapabilitiesKHR &getSurfaceCapabilities() const {
@@ -135,6 +136,9 @@ struct Renderer {
     void terminate();
     void loop();
 
+    void initWindow();
+    void terminateWindow();
+    static void windowResizeCallback(GLFWwindow *window, int width, int height);
     void render();
     void drawFrame();
     void onWindowResize();

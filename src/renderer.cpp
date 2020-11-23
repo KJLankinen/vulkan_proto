@@ -2,15 +2,18 @@
 
 namespace vulkan_proto {
 Renderer::Renderer()
-    : m_instance(*this), m_device(*this), m_surface(*this), m_swapchain(*this),
+    : m_instance(*this), m_device(*this), m_swapchain(*this),
       m_renderPass(*this), m_graphicsPipeline(*this), m_camera(*this),
       m_logger("vulkan_proto.log") {}
+
 Renderer::~Renderer() {}
 
 void Renderer::init() {
-    m_surface.initWindow();
+    initWindow();
     m_instance.create();
-    m_surface.create();
+    LOG("=Create surface=");
+    VK_CHECK(glfwCreateWindowSurface(m_instance.m_handle, m_window, m_allocator,
+                                     &m_surface));
     m_device.create();
     m_swapchain.chooseFormats();
     m_renderPass.create();
@@ -30,28 +33,42 @@ void Renderer::terminate() {
     m_graphicsPipeline.destroy();
 
     vkDestroyDescriptorPool(m_device.m_handle, m_descriptorPool, m_allocator);
+    m_descriptorPool = VK_NULL_HANDLE;
 
     for (auto &dsl : m_descriptorSetLayouts) {
         vkDestroyDescriptorSetLayout(m_device.m_handle, dsl, m_allocator);
     }
+    m_descriptorSetLayouts.clear();
 
     for (auto &model : m_models) {
         model.destroy();
     }
+    m_models.clear();
 
     LOG("=Destroy semaphores=");
     vkDestroySemaphore(m_device.m_handle, m_renderingFinished, m_allocator);
     vkDestroySemaphore(m_device.m_handle, m_imageAvailable, m_allocator);
+    m_renderingFinished = VK_NULL_HANDLE;
+    m_imageAvailable = VK_NULL_HANDLE;
 
     LOG("=Destroy texture sampler=");
     vkDestroySampler(m_device.m_handle, m_textureSampler, m_allocator);
+    m_textureSampler = VK_NULL_HANDLE;
 
     m_swapchain.destroy(getSwapchain());
     m_renderPass.destroy();
     m_device.destroy();
-    m_surface.destroy();
+
+    LOG("=Destroy surface=");
+    vkDestroySurfaceKHR(m_instance.m_handle, m_surface, m_allocator);
+    m_surface = VK_NULL_HANDLE;
+
     m_instance.destroy();
-    m_surface.terminateWindow();
+    terminateWindow();
+
+    if (m_window != nullptr) {
+        glfwDestroyWindow(m_window);
+    }
 
     m_logger.flush();
 }
@@ -59,7 +76,7 @@ void Renderer::terminate() {
 void Renderer::run(const char *inputFileName) {
     std::ifstream file(inputFileName, std::ios::in);
     if (file.is_open() == false) {
-        printf("Could not open the input file with name %s\n", inputFileName);
+        LOG("Could not open the input file with name %s\n", inputFileName);
         return;
     }
 
@@ -71,20 +88,43 @@ void Renderer::run(const char *inputFileName) {
         init();
         loop();
     } catch (const std::runtime_error &e) {
-        printf("Unhandled exception: %s\n", e.what());
+        LOG("Unhandled exception: %s\n", e.what());
     }
 
     terminate();
 }
 
 void Renderer::loop() {
-    while (!glfwWindowShouldClose(m_surface.m_window)) {
-        if (m_windowResized) {
-            onWindowResize();
-            m_windowResized = false;
-        }
+    while (!glfwWindowShouldClose(m_window)) {
         render();
         glfwPollEvents();
+    }
+}
+
+void Renderer::initWindow() {
+    LOG("=Init window=");
+    glfwInit();
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
+    glfwWindowHint(GLFW_FLOATING, GLFW_TRUE);
+    m_window = glfwCreateWindow(m_windowWidth, m_windowHeight, "Vulkan window",
+                                nullptr, nullptr);
+    glfwSetWindowUserPointer(m_window, static_cast<void *>(this));
+    glfwSetFramebufferSizeCallback(m_window, windowResizeCallback);
+}
+
+void Renderer::terminateWindow() {
+    LOG("=Terminate window=");
+    glfwTerminate();
+}
+
+void Renderer::windowResizeCallback(GLFWwindow *window, int width, int height) {
+    Renderer *renderer =
+        static_cast<Renderer *>(glfwGetWindowUserPointer(window));
+    if (renderer != nullptr) {
+        renderer->m_windowWidth = width;
+        renderer->m_windowHeight = height;
+        renderer->onWindowResize();
     }
 }
 
@@ -147,9 +187,9 @@ void Renderer::drawFrame() {
 }
 
 void Renderer::onWindowResize() {
-    if (m_surface.m_windowWidth > 0 && m_surface.m_windowHeight > 0) {
+    if (m_windowWidth > 0 && m_windowHeight > 0) {
         if (m_device.m_handle != VK_NULL_HANDLE &&
-            m_surface.m_handle != VK_NULL_HANDLE) {
+            m_surface != VK_NULL_HANDLE) {
             recreateSwapchain();
         }
     }
