@@ -28,43 +28,62 @@ struct Renderer {
 
     mutable Logger m_logger;
 
+    nlohmann::json m_programInput;
+    std::string m_dataPath;
+
   public:
     Renderer();
     ~Renderer();
-    void run();
+    void run(const char *inputFileName);
+
+    const char *getDataPath() const { return m_dataPath.c_str(); }
+
+    const nlohmann::json &getProgramInput() const { return m_programInput; }
 
     const VkInstance &getInstance() const { return m_instance.m_handle; }
+
     const VkDevice &getDevice() const { return m_device.m_handle; }
+
     const VkPhysicalDevice &getPhysicalDevice() const {
         return m_device.m_device;
     }
+
     const VkSurfaceKHR &getSurface() const { return m_surface.m_handle; }
+
     const VkSwapchainKHR &getSwapchain() const { return m_swapchain.m_handle; }
+
     const VkRenderPass &getRenderPass() const { return m_renderPass.m_handle; }
-    const VkPipeline &getGraphicsPipeline() const {
-        return m_graphicsPipeline.m_handle;
-    }
+
     const VkAllocationCallbacks *getAllocator() const { return m_allocator; }
+
     const std::array<const char *, 1> &getValidationLayers() const {
         return m_instance.m_validationLayers;
     }
+
     const VkFormat &getSurfaceFormat() const {
         return m_swapchain.m_surfaceFormat.format;
     }
+
     const VkFormat &getDepthFormat() const { return m_swapchain.m_depthFormat; }
+
     VkExtent2D getSwapchainExtent() const { return m_swapchain.m_extent; }
+
     VkExtent2D getWindowExtent() const {
         return VkExtent2D{m_surface.m_windowWidth, m_surface.m_windowHeight};
     }
+
     const VkSurfaceCapabilitiesKHR &getSurfaceCapabilities() const {
         return m_device.m_surfCap;
     }
+
     uint32_t getGraphicsFamilyIndex() const {
         return (uint32_t)m_device.m_graphicsFI;
     }
+
     uint32_t getPresentFamilyIndex() const {
         return (uint32_t)m_device.m_presentFI;
     }
+
     const std::vector<VkPushConstantRange> &getPushConstantRanges() const {
         return m_pushConstantRanges;
     }

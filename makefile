@@ -5,7 +5,7 @@ OBJ_NAMES := device.o instance.o main.o render_pass.o renderer.o surface.o swapc
 OBJS = $(addprefix $(BIN_DIR)/, $(OBJ_NAMES))
 HEADERS := $(wildcard $(SRC_DIR)/*.h)
 EXEC = $(BIN_DIR)/vupro
-LIBS := -lvulkan -lglfw -lglslang
+LIBS := -lvulkan -lglfw -lglslang -lSPIRV
 override CFLAGS += -std=c++17 -Wall $(INCL) $(OPTIM) $(DEFINES)
 LFLAGS :=
 

@@ -11,5 +11,5 @@
             "type" : "fragment"
         }
     ],
-    "data_path": "~/Code/vulkan_proto/data/"
+    "data_path": "/home/hunaja/Code/vulkan_proto/data/"
 }

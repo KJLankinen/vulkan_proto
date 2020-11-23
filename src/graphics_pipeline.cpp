@@ -4,18 +4,21 @@
 #include "renderer.h"
 #include <glslang/SPIRV/GlslangToSpv.h>
 
+bool vulkan_proto::GraphicsPipeline::glslangInitialized = false;
+
 namespace vulkan_proto {
 GraphicsPipeline::GraphicsPipeline(Renderer &renderer) : m_renderer(renderer) {}
 GraphicsPipeline::~GraphicsPipeline() {}
 
-void GraphicsPipeline::create(const nlohmann::json &info, bool recycle) {
+void GraphicsPipeline::create(bool recycle) {
+    LOG("=Create graphics pipeline=");
     if (recycle) {
-        destroy();
+        destroy(recycle);
     }
 
-    const uint32_t numShaderStages =
-        static_cast<uint32_t>(info.at("shaders").size());
-    std::vector<VkShaderModule> shaderModules(numShaderStages);
+    auto shaders = m_renderer.getProgramInput().at("shaders");
+    const uint32_t numShaderStages = static_cast<uint32_t>(shaders.size());
+    m_shaderModules.resize(numShaderStages);
     std::vector<VkPipelineShaderStageCreateInfo> shaderCIs(numShaderStages);
     std::vector<std::string> entryPoints(numShaderStages);
 
@@ -48,15 +51,18 @@ void GraphicsPipeline::create(const nlohmann::json &info, bool recycle) {
 
     // Shaders
     uint32_t shaderStageIndex = 0;
-    for (const auto &it : info.at("shaders")) {
+    for (const auto &it : shaders) {
         setShaderStage(it.at("type").get<std::string>());
 
-        shaderModules[shaderStageIndex] = createShaderModuleFromGLSL(
-            std::string(info.at("data_path").get<std::string>() +
-                        it.at("path").get<std::string>())
-                .c_str(),
+        VkShaderModule sm = createShaderModuleFromGLSL(
+            std::string(m_renderer.getDataPath() +
+                        it.at("path").get<std::string>()),
             stage);
+        THROW_IF(sm == VK_NULL_HANDLE,
+                 "Shader module is VK_NULL_HANDLE for shader file %s",
+                 it.at("path").get<std::string>().c_str());
 
+        m_shaderModules[shaderStageIndex] = sm;
         entryPoints[shaderStageIndex] = it.at("entryPoint").get<std::string>();
 
         shaderCIs[shaderStageIndex].sType =
@@ -64,7 +70,7 @@ void GraphicsPipeline::create(const nlohmann::json &info, bool recycle) {
         shaderCIs[shaderStageIndex].pNext = nullptr;
         shaderCIs[shaderStageIndex].flags = 0;
         shaderCIs[shaderStageIndex].stage = stageFlag;
-        shaderCIs[shaderStageIndex].module = shaderModules[shaderStageIndex];
+        shaderCIs[shaderStageIndex].module = m_shaderModules[shaderStageIndex];
         shaderCIs[shaderStageIndex].pName =
             entryPoints[shaderStageIndex].c_str();
         shaderCIs[shaderStageIndex].pSpecializationInfo = nullptr;
@@ -159,7 +165,7 @@ void GraphicsPipeline::create(const nlohmann::json &info, bool recycle) {
     vp.maxDepth = 1.0f;
 
     VkRect2D scissor = {};
-    scissor.extent = {vp.width, vp.height};
+    scissor.extent = {m_renderer.getSwapchainExtent()};
     scissor.offset = {0, 0};
 
     VkPipelineViewportStateCreateInfo viewPortStateCI = {};
@@ -252,17 +258,29 @@ void GraphicsPipeline::create(const nlohmann::json &info, bool recycle) {
                                        m_renderer.getAllocator(), &m_handle));
 
     // Clean up shader modules
-    for (auto &it : shaderModules) {
+    for (auto &it : m_shaderModules) {
         vkDestroyShaderModule(m_renderer.getDevice(), it,
                               m_renderer.getAllocator());
     }
+    m_shaderModules.clear();
 }
 
-void GraphicsPipeline::destroy() {
+void GraphicsPipeline::destroy(bool recycle) {
+    LOG("=Destroy graphics pipeline=");
+    if (!recycle && glslangInitialized) {
+        glslang::FinalizeProcess();
+        glslangInitialized = false;
+    }
     vkDestroyPipelineLayout(m_renderer.getDevice(), m_layout,
                             m_renderer.getAllocator());
     vkDestroyPipeline(m_renderer.getDevice(), m_handle,
                       m_renderer.getAllocator());
+
+    for (auto &it : m_shaderModules) {
+        vkDestroyShaderModule(m_renderer.getDevice(), it,
+                              m_renderer.getAllocator());
+    }
+    m_shaderModules.clear();
 
     m_layout = VK_NULL_HANDLE;
     m_handle = VK_NULL_HANDLE;
@@ -299,17 +317,20 @@ GraphicsPipeline::createShaderModuleFromSpirV(const char *fName) {
 }
 
 VkShaderModule
-GraphicsPipeline::createShaderModuleFromGLSL(const char *fName,
+GraphicsPipeline::createShaderModuleFromGLSL(std::string &&filename,
                                              EShLanguage shaderStage) {
+    LOG("=Creating shader module from %s=", filename.c_str());
     // Initialize only once per process
     if (!glslangInitialized) {
         glslang::InitializeProcess();
         glslangInitialized = true;
     }
 
-    std::string filename(fName);
-    std::ifstream file(filename);
-    THROW_IF(file.is_open() == false, "Problem opening file.");
+    std::filesystem::path f{filename.c_str()};
+    THROW_IF(!std::filesystem::exists(f), "File %s does not exist",
+             filename.c_str());
+    std::ifstream file(filename.c_str(), std::ios::in);
+    THROW_IF(!file.is_open(), "Problem opening file %s", filename.c_str());
 
     std::string sourceStr((std::istreambuf_iterator<char>(file)),
                           std::istreambuf_iterator<char>());
@@ -335,15 +356,14 @@ GraphicsPipeline::createShaderModuleFromGLSL(const char *fName,
     shader.setEnvClient(glslang::EShClientVulkan, vulkanVersion);
     shader.setEnvTarget(glslang::EShTargetSpv, targetVersion);
 
-    TBuiltInResource resources;
-    // TODO decode the given config
-    // DecodeResourceLimits(&resources, info.at("").get<std::string>().c_str());
+    // TODO
+    TBuiltInResource resources = {}; // = glslang::DefaultTBuiltInResource;
     EShMessages messages = (EShMessages)(EShMsgSpvRules | EShMsgVulkanRules);
     std::string tempStr;
 
     if (!shader.preprocess(&resources, defaultVersion, ENoProfile, false, false,
                            messages, &tempStr, includer)) {
-        LOG("GLSL preprocessing failed for %s\n%s\n%s\n", fName,
+        LOG("GLSL preprocessing failed for %s\n%s\n%s\n", filename.c_str(),
             shader.getInfoLog(), shader.getInfoDebugLog());
 
         return VK_NULL_HANDLE;
@@ -353,8 +373,8 @@ GraphicsPipeline::createShaderModuleFromGLSL(const char *fName,
     shader.setStrings(&preprocessedCStr, 1);
 
     if (!shader.parse(&resources, defaultVersion, false, messages)) {
-        LOG("GLSL parse failed for %s\n%s\n%s\n", fName, shader.getInfoLog(),
-            shader.getInfoDebugLog());
+        LOG("GLSL parse failed for %s\n%s\n%s\n", filename.c_str(),
+            shader.getInfoLog(), shader.getInfoDebugLog());
 
         return VK_NULL_HANDLE;
     }
@@ -363,8 +383,8 @@ GraphicsPipeline::createShaderModuleFromGLSL(const char *fName,
     program.addShader(&shader);
 
     if (!program.link(messages)) {
-        LOG("GLSL linking failed for %s\n%s\n%s\n", fName, shader.getInfoLog(),
-            shader.getInfoDebugLog());
+        LOG("GLSL linking failed for %s\n%s\n%s\n", filename.c_str(),
+            shader.getInfoLog(), shader.getInfoDebugLog());
 
         return VK_NULL_HANDLE;
     }

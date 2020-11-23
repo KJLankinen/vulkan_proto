@@ -35,7 +35,7 @@ inline void throwIf(bool condition, std::string msg, const char *fileName,
                     int line) {
     if (condition) {
         throw std::runtime_error(
-            FORMAT_STR("'%s' at %s:%d.", msg.c_str(), fileName, line).c_str());
+            FORMAT_STR("@%s:%d\n\t'%s'", fileName, line, msg.c_str()).c_str());
     }
 }
 

@@ -7,6 +7,58 @@ Renderer::Renderer()
       m_logger("vulkan_proto.log") {}
 Renderer::~Renderer() {}
 
+void Renderer::init() {
+    nlohmann::json info;
+    m_surface.initWindow();
+    m_instance.create();
+    m_surface.create();
+    m_device.create();
+    m_swapchain.chooseFormats();
+    m_renderPass.create();
+    m_swapchain.create();
+    createTextureSampler();
+    createSemaphores();
+    m_graphicsPipeline.create();
+}
+
+void Renderer::terminate() {
+    if (m_device.m_handle != VK_NULL_HANDLE) {
+        VK_CHECK(vkDeviceWaitIdle(m_device.m_handle));
+    }
+
+    m_graphicsPipeline.destroy();
+    destroySemaphores();
+    destroyTextureSampler();
+    m_swapchain.destroy(getSwapchain());
+    m_renderPass.destroy();
+    m_device.destroy();
+    m_surface.destroy();
+    m_instance.destroy();
+    m_surface.terminateWindow();
+
+    m_logger.flush();
+}
+
+void Renderer::run(const char *inputFileName) {
+    std::ifstream file(inputFileName, std::ios::in);
+    if (file.is_open() == false) {
+        printf("Could not open the input file with name %s\n", inputFileName);
+        return;
+    }
+
+    file >> m_programInput;
+    file.close();
+    m_dataPath = m_programInput.at("data_path").get<std::string>().c_str();
+
+    try {
+        init();
+    } catch (const std::runtime_error &e) {
+        printf("Unhandled exception: %s\n", e.what());
+    }
+
+    terminate();
+}
+
 void Renderer::createTextureSampler() {
     LOG("=Create texture sampler=");
     VkSamplerCreateInfo info = {};
@@ -268,47 +320,5 @@ void Renderer::endSingleTimeCommands(VkCommandBuffer commandBuffer) const {
         vkFreeCommandBuffers(m_device.m_handle, m_device.m_commandPool, 1,
                              &commandBuffer);
     }
-}
-
-void Renderer::init() {
-    nlohmann::json info;
-    m_surface.initWindow();
-    m_instance.create();
-    m_surface.create();
-    m_device.create();
-    m_swapchain.chooseFormats();
-    m_renderPass.create();
-    m_swapchain.create();
-    createTextureSampler();
-    createSemaphores();
-    m_graphicsPipeline.create(info);
-}
-
-void Renderer::terminate() {
-    if (m_device.m_handle != VK_NULL_HANDLE) {
-        VK_CHECK(vkDeviceWaitIdle(m_device.m_handle));
-    }
-
-    m_graphicsPipeline.destroy();
-    destroySemaphores();
-    destroyTextureSampler();
-    m_swapchain.destroy(getSwapchain());
-    m_renderPass.destroy();
-    m_device.destroy();
-    m_surface.destroy();
-    m_instance.destroy();
-    m_surface.terminateWindow();
-
-    m_logger.flush();
-}
-
-void Renderer::run() {
-    try {
-        init();
-    } catch (const std::runtime_error &e) {
-        printf("Unhandled exception: %s\n", e.what());
-    }
-
-    terminate();
 }
 } // namespace vulkan_proto
