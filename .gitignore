@@ -1,2 +1,4 @@
 bin/
 tags
+incl/tinyobjloader
+incl/stb

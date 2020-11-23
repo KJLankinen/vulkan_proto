@@ -22,10 +22,16 @@ struct Renderer {
     VkAllocationCallbacks *m_allocator = nullptr;
 
     VkSampler m_textureSampler = VK_NULL_HANDLE;
+
     VkSemaphore m_imageAvailable = VK_NULL_HANDLE;
     VkSemaphore m_renderingFinished = VK_NULL_HANDLE;
+
+    VkDescriptorSet m_commonDescriptorSet = VK_NULL_HANDLE;
+    VkDescriptorPool m_descriptorPool = VK_NULL_HANDLE;
+
     std::vector<VkPushConstantRange> m_pushConstantRanges;
     std::vector<VkDescriptorSetLayout> m_descriptorSetLayouts;
+
     std::vector<Model> m_models;
 
     mutable Logger m_logger;
@@ -118,12 +124,12 @@ struct Renderer {
     Logger &getLogger() const { return m_logger; }
 
   private:
-    void createModels();
-    void createTextureSampler();
-    void destroyTextureSampler();
-    void createSemaphores();
-    void destroySemaphores();
     void init();
     void terminate();
+
+    void setupDescriptors();
+    void createModels();
+    void createTextureSampler();
+    void createSemaphores();
 };
 } // namespace vulkan_proto

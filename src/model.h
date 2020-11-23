@@ -12,10 +12,21 @@ struct Logger;
 struct Model {
     const Renderer &m_renderer;
 
+    // TODO these should be pointers, so that multiple instances can use the
+    // same mesh and textures
     Mesh m_mesh;
     std::vector<Texture> m_textures;
+
     VkDescriptorSet m_descriptorSet = VK_NULL_HANDLE;
-    glm::mat4 modelMatrix = glm::mat4(1.0f);
+    glm::mat4 m_modelMatrix = glm::mat4(1.0f);
+
+    struct Buffer {
+        VkDescriptorBufferInfo descriptor;
+        VkBuffer stagingBuffer;
+        VkBuffer buffer;
+        VkDeviceMemory stagingMemory;
+        VkDeviceMemory memory;
+    } m_uniformBuffer;
 
     Model(Renderer &renderer);
     ~Model();

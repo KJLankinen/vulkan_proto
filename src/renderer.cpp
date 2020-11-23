@@ -17,8 +17,9 @@ void Renderer::init() {
     m_swapchain.create();
     createTextureSampler();
     createSemaphores();
-    // m_graphicsPipeline.create();
+    m_graphicsPipeline.create();
     createModels();
+    setupDescriptors();
 }
 
 void Renderer::terminate() {
@@ -29,9 +30,15 @@ void Renderer::terminate() {
     for (auto &model : m_models) {
         model.destroy();
     }
-    // m_graphicsPipeline.destroy();
-    destroySemaphores();
-    destroyTextureSampler();
+    m_graphicsPipeline.destroy();
+
+    LOG("=Destroy semaphores=");
+    vkDestroySemaphore(m_device.m_handle, m_renderingFinished, m_allocator);
+    vkDestroySemaphore(m_device.m_handle, m_imageAvailable, m_allocator);
+
+    LOG("=Destroy texture sampler=");
+    vkDestroySampler(m_device.m_handle, m_textureSampler, m_allocator);
+
     m_swapchain.destroy(getSwapchain());
     m_renderPass.destroy();
     m_device.destroy();
@@ -60,6 +67,137 @@ void Renderer::run(const char *inputFileName) {
     }
 
     terminate();
+}
+
+void Renderer::setupDescriptors() {
+    m_descriptorSetLayouts.clear();
+    m_descriptorSetLayouts.resize(2);
+
+    // Texture sampler bindings
+    // layout (set = 0, binding = 0)
+    std::array<VkDescriptorSetLayoutBinding, 1> commonBindings;
+    commonBindings[0].binding = 0;
+    commonBindings[0].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+    commonBindings[0].descriptorCount = 1;
+    commonBindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    commonBindings[0].pImmutableSamplers = &m_textureSampler;
+
+    // Object bindings
+    // First one for model matrix
+    // layout (set = 1, binding = 0)
+    std::array<VkDescriptorSetLayoutBinding, 2> objectBindings;
+    objectBindings[0].binding = 0;
+    objectBindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    // If an array, 'descriptorCount', should equal that
+    objectBindings[0].descriptorCount = 1;
+    objectBindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    objectBindings[0].pImmutableSamplers = nullptr;
+
+    // Second one for texture
+    // layout (set = 1, binding = 1)
+    objectBindings[1].binding = 1;
+    objectBindings[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    objectBindings[1].descriptorCount = 1;
+    objectBindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    objectBindings[1].pImmutableSamplers = nullptr;
+
+    const VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCis[] = {
+        {
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, // sType
+            nullptr,                                             // pNext
+            0,                                                   // flags
+            static_cast<uint32_t>(commonBindings.size()),        // bindingCount
+            commonBindings.data()                                // pBindings
+        },
+        {
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, // sType
+            nullptr,                                             // pNext
+            0,                                                   // flags
+            static_cast<uint32_t>(objectBindings.size()),        // bindingCount
+            objectBindings.data()                                // pBindings
+        },
+    };
+
+    VK_CHECK(vkCreateDescriptorSetLayout(
+        m_device.m_handle, &descriptorSetLayoutCis[0], m_allocator,
+        &m_descriptorSetLayouts[0]));
+
+    VK_CHECK(vkCreateDescriptorSetLayout(
+        m_device.m_handle, &descriptorSetLayoutCis[1], m_allocator,
+        &descriptorSetLayouts[1]));
+
+    // == DESCRIPTOR POOL ==
+    std::array<VkDescriptorPoolSize, 3> descriptorPoolSizes = {
+        {
+            VK_DESCRIPTOR_TYPE_SAMPLER, // type
+            1                           // count
+        },
+        {
+            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,     // type
+            static_cast<uint32_t>(m_models.size()) // count
+        },
+        {
+            VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,      // type
+            static_cast<uint32_t>(m_models.size()) // count
+        }};
+
+    VkDescriptorPoolCreateInfo descriptorPoolCI = {};
+    descriptorPoolCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    descriptorPoolCI.poolSizeCount =
+        static_cast<uint32_t>(descriptorPoolSizes.size());
+    descriptorPoolCI.pPoolSizes = descriptorPoolSizes.data();
+    // 1 for the sampler + 1 per each object
+    descriptorPoolCI.maxSets = 1 + static_cast<uint32_t>(m_models.size());
+
+    VK_CHECK(vkCreateDescriptorPool(m_device.m_handle, &descriptorPoolCI,
+                                    m_allocator, &descriptorPool));
+
+    // Common set
+    VkDescriptorSetAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = descriptorPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &descriptorSetLayouts[0];
+
+    VK_CHECK(vkAllocateDescriptorSets(m_device.m_handle, &allocInfo,
+                                      &m_commonDescriptorSet));
+
+    // Per object sets
+    for (auto &model : m_models) {
+        allocInfo = {};
+        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.descriptorPool = descriptorPool;
+        allocInfo.descriptorSetCount = 1;
+        allocInfo.pSetLayouts = &descriptorSetLayouts[1];
+
+        VK_CHECK(vkAllocateDescriptorSets(m_device.m_handle, &allocInfo,
+                                          &model.descriptorSet));
+
+        model.m_uniformBuffer.descriptor.buffer = model.m_uniformBuffer.buffer;
+        model.m_uniformBuffer.descriptor.offset = 0;
+        model.m_uniformBuffer.descriptor.range = sizeof(model.m_modelMatrix);
+
+        std::array<VkWriteDescriptorSet, 2> descriptorWrites;
+        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[0].dstSet = model.descriptorSet;
+        descriptorWrites[0].dstBinding = 0;
+        descriptorWrites[0].dstArrayElement = 0;
+        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrites[0].descriptorCount = 1;
+        descriptorWrites[0].pBufferInfo = &model.m_uniformBuffer.descriptor;
+
+        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[1].dstSet = model.descriptorSet;
+        descriptorWrites[1].dstBinding = 1;
+        descriptorWrites[1].dstArrayElement = 0;
+        descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+        descriptorWrites[1].descriptorCount = 1;
+        descriptorWrites[1].pImageInfo = &model.texture.descriptor;
+
+        vkUpdateDescriptorSets(m_device.m_handle,
+                               static_cast<uint32_t>(descriptorWrites.size()),
+                               descriptorWrites.data(), 0, nullptr);
+    }
 }
 
 void Renderer::createModels() {
@@ -97,11 +235,6 @@ void Renderer::createTextureSampler() {
                              &m_textureSampler));
 }
 
-void Renderer::destroyTextureSampler() {
-    LOG("=Destroy texture sampler=");
-    vkDestroySampler(m_device.m_handle, m_textureSampler, m_allocator);
-}
-
 void Renderer::createSemaphores() {
     LOG("=Create semaphores=");
     VkSemaphoreCreateInfo semaphoreCi = {};
@@ -111,12 +244,6 @@ void Renderer::createSemaphores() {
                                &m_imageAvailable));
     VK_CHECK(vkCreateSemaphore(m_device.m_handle, &semaphoreCi, m_allocator,
                                &m_renderingFinished));
-}
-
-void Renderer::destroySemaphores() {
-    LOG("=Destroy semaphores=");
-    vkDestroySemaphore(m_device.m_handle, m_renderingFinished, m_allocator);
-    vkDestroySemaphore(m_device.m_handle, m_imageAvailable, m_allocator);
 }
 
 void Renderer::copyCPUToGPU(const void *srcData, VkDeviceSize sizeInBytes,
