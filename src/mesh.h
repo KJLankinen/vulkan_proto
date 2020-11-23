@@ -36,4 +36,3 @@ struct Mesh {
     Logger &getLogger();
 };
 } // namespace vulkan_proto
-#pragma once

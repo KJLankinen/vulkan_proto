@@ -18,6 +18,7 @@ struct Surface {
     void destroy();
     void initWindow();
     void terminateWindow();
+    static void windowResizeCallback(GLFWwindow *window, int width, int height);
     Logger &getLogger();
 };
 }

@@ -1,4 +1,5 @@
 #pragma once
+#include "camera.h"
 #include "device.h"
 #include "graphics_pipeline.h"
 #include "headers.h"
@@ -32,9 +33,13 @@ struct Renderer {
     std::vector<VkPushConstantRange> m_pushConstantRanges;
     std::vector<VkDescriptorSetLayout> m_descriptorSetLayouts;
 
+    std::vector<VkCommandBuffer> m_commandBuffers;
+
     std::vector<Model> m_models;
 
+    Camera m_camera;
     mutable Logger m_logger;
+    mutable bool m_windowResized = false;
 
     nlohmann::json m_programInput;
     std::string m_dataPath;
@@ -43,6 +48,8 @@ struct Renderer {
     Renderer();
     ~Renderer();
     void run(const char *inputFileName);
+
+    void windowResized() const { m_windowResized = true; }
 
     const char *getDataPath() const { return m_dataPath.c_str(); }
 
@@ -126,7 +133,14 @@ struct Renderer {
   private:
     void init();
     void terminate();
+    void loop();
 
+    void render();
+    void drawFrame();
+    void onWindowResize();
+    void recreateSwapchain();
+    void updateUniformBuffers();
+    void recordCommandBuffers();
     void setupDescriptors();
     void createModels();
     void createTextureSampler();

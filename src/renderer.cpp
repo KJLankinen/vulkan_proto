@@ -3,7 +3,7 @@
 namespace vulkan_proto {
 Renderer::Renderer()
     : m_instance(*this), m_device(*this), m_surface(*this), m_swapchain(*this),
-      m_renderPass(*this), m_graphicsPipeline(*this),
+      m_renderPass(*this), m_graphicsPipeline(*this), m_camera(*this),
       m_logger("vulkan_proto.log") {}
 Renderer::~Renderer() {}
 
@@ -20,6 +20,7 @@ void Renderer::init() {
     createModels();
     setupDescriptors();
     m_graphicsPipeline.create();
+    recordCommandBuffers();
 }
 
 void Renderer::terminate() {
@@ -68,11 +69,203 @@ void Renderer::run(const char *inputFileName) {
 
     try {
         init();
+        loop();
     } catch (const std::runtime_error &e) {
         printf("Unhandled exception: %s\n", e.what());
     }
 
     terminate();
+}
+
+void Renderer::loop() {
+    while (!glfwWindowShouldClose(m_surface.m_window)) {
+        if (m_windowResized) {
+            onWindowResize();
+            m_windowResized = false;
+        }
+        render();
+        glfwPollEvents();
+    }
+}
+
+void Renderer::render() {
+    updateUniformBuffers();
+    drawFrame();
+}
+
+void Renderer::drawFrame() {
+    uint32_t imageIndex = ~0U;
+    VkResult result = vkAcquireNextImageKHR(
+        m_device.m_handle, m_swapchain.m_handle, (uint64_t)10, m_imageAvailable,
+        VK_NULL_HANDLE, &imageIndex);
+
+    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+        recreateSwapchain();
+        return;
+    } else if (result == VK_NOT_READY) {
+        return;
+    }
+
+    THROW_IF(result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR,
+             "Failed to acquire swap chain image, resulted in %d", result);
+
+    VkSubmitInfo submitInfo = {};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+    VkSemaphore waitSemaphores[] = {m_imageAvailable};
+    VkPipelineStageFlags waitStages[] = {
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+    submitInfo.waitSemaphoreCount = 1;
+    submitInfo.pWaitSemaphores = waitSemaphores;
+    submitInfo.pWaitDstStageMask = waitStages;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &m_commandBuffers[imageIndex];
+
+    VkSemaphore signalSemaphores[] = {m_renderingFinished};
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores = signalSemaphores;
+
+    VK_CHECK(vkQueueSubmit(m_device.m_graphicsQueue, 1, &submitInfo,
+                           VK_NULL_HANDLE));
+
+    VkPresentInfoKHR presentInfo = {};
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = signalSemaphores;
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = &m_swapchain.m_handle;
+    presentInfo.pImageIndices = &imageIndex;
+    presentInfo.pResults = nullptr;
+
+    result = vkQueuePresentKHR(m_device.m_presentQueue, &presentInfo);
+
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+        recreateSwapchain();
+    } else {
+        VK_CHECK(result);
+    }
+}
+
+void Renderer::onWindowResize() {
+    if (m_surface.m_windowWidth > 0 && m_surface.m_windowHeight > 0) {
+        if (m_device.m_handle != VK_NULL_HANDLE &&
+            m_surface.m_handle != VK_NULL_HANDLE) {
+            recreateSwapchain();
+        }
+    }
+}
+
+void Renderer::recreateSwapchain() {
+    if (m_device.m_handle == VK_NULL_HANDLE) {
+        return;
+    }
+    VK_CHECK(vkDeviceWaitIdle(m_device.m_handle));
+    m_renderPass.create(true);
+    m_swapchain.create(true);
+    m_graphicsPipeline.create(true);
+    recordCommandBuffers();
+}
+
+void Renderer::updateUniformBuffers() {
+    float aspectRatio = m_swapchain.m_extent.width /
+                        static_cast<float>(m_swapchain.m_extent.height);
+    if (aspectRatio == 0.0f) {
+        aspectRatio = 1.0f;
+    }
+
+    static const glm::mat4 vulkanClipFix =
+        glm::mat4(1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                  0.5f, 0.0f, 0.0f, 0.0f, 0.5f, 1.0f);
+
+    glm::mat4 vp = vulkanClipFix;
+    vp *= glm::perspective(glm::radians(m_camera.m_fov), aspectRatio,
+                           m_camera.m_near, m_camera.m_far);
+    vp *= m_camera.getLookAt();
+
+    for (auto &model : m_models) {
+        glm::mat4 modelMatrix = vp * model.m_modelMatrix;
+        copyCPUToGPU(reinterpret_cast<const void *>(&modelMatrix),
+                     (VkDeviceSize)sizeof(modelMatrix),
+                     model.m_uniformBuffer.stagingMemory,
+                     model.m_uniformBuffer.stagingBuffer,
+                     model.m_uniformBuffer.buffer);
+    }
+}
+
+void Renderer::recordCommandBuffers() {
+    LOG("=Recording command buffers=");
+    // If we have old command buffers, let's free them and create new ones.
+    if (m_commandBuffers.size() > 0)
+        vkFreeCommandBuffers(m_device.m_handle, m_device.m_commandPool,
+                             static_cast<uint32_t>(m_commandBuffers.size()),
+                             m_commandBuffers.data());
+
+    m_commandBuffers.resize(m_swapchain.m_framebuffers.size());
+
+    VkCommandBufferAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool = m_device.m_commandPool;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = (uint32_t)m_commandBuffers.size();
+
+    VK_CHECK(vkAllocateCommandBuffers(m_device.m_handle, &allocInfo,
+                                      m_commandBuffers.data()));
+
+    for (uint32_t i = 0; i < static_cast<uint32_t>(m_commandBuffers.size());
+         ++i) {
+        VkCommandBufferBeginInfo beginInfo = {};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+        beginInfo.pInheritanceInfo = nullptr;
+
+        // Begin recording a command buffer
+        VK_CHECK(vkBeginCommandBuffer(m_commandBuffers[i], &beginInfo));
+
+        VkRenderPassBeginInfo renderPassInfo = {};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassInfo.renderPass = m_renderPass.m_handle;
+        renderPassInfo.framebuffer = m_swapchain.m_framebuffers[i];
+        renderPassInfo.renderArea.offset = {0, 0};
+        renderPassInfo.renderArea.extent = m_swapchain.m_extent;
+
+        std::array<VkClearValue, 2> clearValues = {};
+        clearValues[0].color = {0.0f, 0.0f, 0.0f, 1.0f};
+        clearValues[1].depthStencil = {1.0f, 0};
+        renderPassInfo.clearValueCount =
+            static_cast<uint32_t>(clearValues.size());
+        renderPassInfo.pClearValues = clearValues.data();
+
+        VkDeviceSize offsets[] = {0};
+
+        vkCmdBeginRenderPass(m_commandBuffers[i], &renderPassInfo,
+                             VK_SUBPASS_CONTENTS_INLINE);
+
+        vkCmdBindPipeline(m_commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          m_graphicsPipeline.m_handle);
+        // Common set
+        vkCmdBindDescriptorSets(m_commandBuffers[i],
+                                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                m_graphicsPipeline.m_layout, 0, 1,
+                                &m_commonDescriptorSet, 0, nullptr);
+
+        for (auto model : m_models) {
+            vkCmdBindVertexBuffers(m_commandBuffers[i], 0, 1,
+                                   &model.m_mesh.m_vertexBuffer, offsets);
+            vkCmdBindIndexBuffer(m_commandBuffers[i],
+                                 model.m_mesh.m_indexBuffer, 0,
+                                 VK_INDEX_TYPE_UINT32);
+            vkCmdBindDescriptorSets(m_commandBuffers[i],
+                                    VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    m_graphicsPipeline.m_layout, 1, 1,
+                                    &model.m_descriptorSet, 0, nullptr);
+            vkCmdDrawIndexed(m_commandBuffers[i], model.m_mesh.m_indices.size(),
+                             1, 0, 0, 0);
+        }
+
+        vkCmdEndRenderPass(m_commandBuffers[i]);
+
+        VK_CHECK(vkEndCommandBuffer(m_commandBuffers[i]));
+    }
 }
 
 void Renderer::setupDescriptors() {
