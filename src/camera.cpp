@@ -6,13 +6,13 @@ namespace vulkan_proto {
     Camera::~Camera() {}
 
     glm::mat4 Camera::getLookAt() {
-        return glm::lookAt(m_position, glm::vec3(0.0f), m_up);
+        return glm::lookAt(m_position, m_position + m_direction, m_up);
     }
 
     void Camera::update() {
         // Movement per unit time
-        m_position += m_velocity.x * m_direction * m_speed +
-                      m_velocity.y * m_right * m_speed;
+        m_position += m_velocity.y * m_direction * m_speed +
+                      m_velocity.x * m_right * m_speed;
 
         // Direction
         m_yawPitch += m_dxdy * m_mouseSpeed;

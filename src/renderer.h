@@ -46,6 +46,7 @@ struct Renderer {
 
     nlohmann::json m_programInput;
     std::string m_dataPath;
+    glm::vec2 m_prevCursorPos = glm::vec2(0.0f);
 
   public:
     Renderer();
@@ -139,6 +140,10 @@ struct Renderer {
     void initWindow();
     void terminateWindow();
     static void windowResizeCallback(GLFWwindow *window, int width, int height);
+    static void cursorPositionCallback(GLFWwindow *window, double xpos,
+                                       double ypos);
+    static void keyEventCallback(GLFWwindow *window, int key, int scancode,
+                                 int action, int mods);
     void render();
     void drawFrame();
     void onWindowResize();

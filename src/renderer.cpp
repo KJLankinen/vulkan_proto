@@ -97,6 +97,7 @@ void Renderer::run(const char *inputFileName) {
 void Renderer::loop() {
     while (!glfwWindowShouldClose(m_window)) {
         render();
+        m_camera.update();
         glfwPollEvents();
     }
 }
@@ -107,10 +108,18 @@ void Renderer::initWindow() {
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
     glfwWindowHint(GLFW_FLOATING, GLFW_TRUE);
+
     m_window = glfwCreateWindow(m_windowWidth, m_windowHeight, "Vulkan window",
                                 nullptr, nullptr);
+
     glfwSetWindowUserPointer(m_window, static_cast<void *>(this));
     glfwSetFramebufferSizeCallback(m_window, windowResizeCallback);
+    glfwSetKeyCallback(m_window, keyEventCallback);
+    glfwSetCursorPosCallback(m_window, cursorPositionCallback);
+    glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    if (glfwRawMouseMotionSupported()) {
+        glfwSetInputMode(m_window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+    }
 }
 
 void Renderer::terminateWindow() {
@@ -125,6 +134,50 @@ void Renderer::windowResizeCallback(GLFWwindow *window, int width, int height) {
         renderer->m_windowWidth = width;
         renderer->m_windowHeight = height;
         renderer->onWindowResize();
+    }
+}
+
+void Renderer::cursorPositionCallback(GLFWwindow *window, double xpos,
+                                      double ypos) {
+    Renderer *renderer =
+        static_cast<Renderer *>(glfwGetWindowUserPointer(window));
+    if (renderer != nullptr) {
+        glm::vec2 newPos(xpos, ypos);
+        renderer->m_camera.m_dxdy = newPos - renderer->m_prevCursorPos;
+        renderer->m_prevCursorPos = newPos;
+    }
+}
+
+void Renderer::keyEventCallback(GLFWwindow *window, int key, int scancode,
+                                int action, int mods) {
+    Renderer *renderer =
+        static_cast<Renderer *>(glfwGetWindowUserPointer(window));
+    if (renderer != nullptr) {
+        if (key == GLFW_KEY_L) {
+            if (action == GLFW_PRESS) {
+                renderer->m_camera.m_velocity.y = 1.0f;
+            } else if (action == GLFW_RELEASE) {
+                renderer->m_camera.m_velocity.y = 0.0f;
+            }
+        } else if (key == GLFW_KEY_N) {
+            if (action == GLFW_PRESS) {
+                renderer->m_camera.m_velocity.y = -1.0f;
+            } else if (action == GLFW_RELEASE) {
+                renderer->m_camera.m_velocity.y = 0.0f;
+            }
+        } else if (key == GLFW_KEY_I) {
+            if (action == GLFW_PRESS) {
+                renderer->m_camera.m_velocity.x = -1.0f;
+            } else if (action == GLFW_RELEASE) {
+                renderer->m_camera.m_velocity.x = 0.0f;
+            }
+        } else if (key == GLFW_KEY_E) {
+            if (action == GLFW_PRESS) {
+                renderer->m_camera.m_velocity.x = 1.0f;
+            } else if (action == GLFW_RELEASE) {
+                renderer->m_camera.m_velocity.x = 0.0f;
+            }
+        }
     }
 }
 
@@ -223,7 +276,9 @@ void Renderer::updateUniformBuffers() {
     vp *= m_camera.getLookAt();
 
     for (auto &model : m_models) {
-        glm::mat4 modelMatrix = vp * model.m_modelMatrix;
+        glm::mat4 modelMatrix = model.m_modelMatrix;
+        modelMatrix *= glm::scale(glm::mat4(1.0f), glm::vec3(10.0f));
+        modelMatrix = vp * modelMatrix;
         copyCPUToGPU(reinterpret_cast<const void *>(&modelMatrix),
                      (VkDeviceSize)sizeof(modelMatrix),
                      model.m_uniformBuffer.stagingMemory,
