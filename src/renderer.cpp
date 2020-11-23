@@ -17,20 +17,26 @@ void Renderer::init() {
     m_swapchain.create();
     createTextureSampler();
     createSemaphores();
-    m_graphicsPipeline.create();
     createModels();
     setupDescriptors();
+    m_graphicsPipeline.create();
 }
 
 void Renderer::terminate() {
     if (m_device.m_handle != VK_NULL_HANDLE) {
         VK_CHECK(vkDeviceWaitIdle(m_device.m_handle));
     }
+    m_graphicsPipeline.destroy();
+
+    vkDestroyDescriptorPool(m_device.m_handle, m_descriptorPool, m_allocator);
+
+    for (auto &dsl : m_descriptorSetLayouts) {
+        vkDestroyDescriptorSetLayout(m_device.m_handle, dsl, m_allocator);
+    }
 
     for (auto &model : m_models) {
         model.destroy();
     }
-    m_graphicsPipeline.destroy();
 
     LOG("=Destroy semaphores=");
     vkDestroySemaphore(m_device.m_handle, m_renderingFinished, m_allocator);
@@ -70,6 +76,7 @@ void Renderer::run(const char *inputFileName) {
 }
 
 void Renderer::setupDescriptors() {
+    LOG("=Setup descriptors=");
     m_descriptorSetLayouts.clear();
     m_descriptorSetLayouts.resize(2);
 
@@ -85,21 +92,26 @@ void Renderer::setupDescriptors() {
     // Object bindings
     // First one for model matrix
     // layout (set = 1, binding = 0)
-    std::array<VkDescriptorSetLayoutBinding, 2> objectBindings;
-    objectBindings[0].binding = 0;
-    objectBindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    std::vector<VkDescriptorSetLayoutBinding> objectBindings;
+    objectBindings.emplace_back();
+    objectBindings.back().binding = 0;
+    objectBindings.back().descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     // If an array, 'descriptorCount', should equal that
-    objectBindings[0].descriptorCount = 1;
-    objectBindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    objectBindings[0].pImmutableSamplers = nullptr;
+    objectBindings.back().descriptorCount = 1;
+    objectBindings.back().stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    objectBindings.back().pImmutableSamplers = nullptr;
 
-    // Second one for texture
-    // layout (set = 1, binding = 1)
-    objectBindings[1].binding = 1;
-    objectBindings[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-    objectBindings[1].descriptorCount = 1;
-    objectBindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    objectBindings[1].pImmutableSamplers = nullptr;
+    // Second one for textures
+    // layout (set = 1, binding = 1..N)
+    // This is hacky, it assumes all models have the same textures size
+    for (uint32_t i = 0; i < m_models[0].m_textures.size(); i++) {
+        objectBindings.emplace_back();
+        objectBindings.back().binding = i + 1;
+        objectBindings.back().descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+        objectBindings.back().descriptorCount = 1;
+        objectBindings.back().stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        objectBindings.back().pImmutableSamplers = nullptr;
+    }
 
     const VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCis[] = {
         {
@@ -124,22 +136,17 @@ void Renderer::setupDescriptors() {
 
     VK_CHECK(vkCreateDescriptorSetLayout(
         m_device.m_handle, &descriptorSetLayoutCis[1], m_allocator,
-        &descriptorSetLayouts[1]));
+        &m_descriptorSetLayouts[1]));
 
-    // == DESCRIPTOR POOL ==
-    std::array<VkDescriptorPoolSize, 3> descriptorPoolSizes = {
-        {
-            VK_DESCRIPTOR_TYPE_SAMPLER, // type
-            1                           // count
-        },
-        {
-            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,     // type
-            static_cast<uint32_t>(m_models.size()) // count
-        },
-        {
-            VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,      // type
-            static_cast<uint32_t>(m_models.size()) // count
-        }};
+    std::array<VkDescriptorPoolSize, 3> descriptorPoolSizes;
+    descriptorPoolSizes[0].type = VK_DESCRIPTOR_TYPE_SAMPLER;
+    descriptorPoolSizes[0].descriptorCount = 1;
+    descriptorPoolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorPoolSizes[1].descriptorCount =
+        static_cast<uint32_t>(m_models.size());
+    descriptorPoolSizes[2].type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    descriptorPoolSizes[2].descriptorCount =
+        static_cast<uint32_t>(m_models.size() * m_models[0].m_textures.size());
 
     VkDescriptorPoolCreateInfo descriptorPoolCI = {};
     descriptorPoolCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -150,14 +157,14 @@ void Renderer::setupDescriptors() {
     descriptorPoolCI.maxSets = 1 + static_cast<uint32_t>(m_models.size());
 
     VK_CHECK(vkCreateDescriptorPool(m_device.m_handle, &descriptorPoolCI,
-                                    m_allocator, &descriptorPool));
+                                    m_allocator, &m_descriptorPool));
 
     // Common set
     VkDescriptorSetAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = descriptorPool;
+    allocInfo.descriptorPool = m_descriptorPool;
     allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &descriptorSetLayouts[0];
+    allocInfo.pSetLayouts = &m_descriptorSetLayouts[0];
 
     VK_CHECK(vkAllocateDescriptorSets(m_device.m_handle, &allocInfo,
                                       &m_commonDescriptorSet));
@@ -166,33 +173,41 @@ void Renderer::setupDescriptors() {
     for (auto &model : m_models) {
         allocInfo = {};
         allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        allocInfo.descriptorPool = descriptorPool;
+        allocInfo.descriptorPool = m_descriptorPool;
         allocInfo.descriptorSetCount = 1;
-        allocInfo.pSetLayouts = &descriptorSetLayouts[1];
+        allocInfo.pSetLayouts = &m_descriptorSetLayouts[1];
 
         VK_CHECK(vkAllocateDescriptorSets(m_device.m_handle, &allocInfo,
-                                          &model.descriptorSet));
+                                          &model.m_descriptorSet));
 
         model.m_uniformBuffer.descriptor.buffer = model.m_uniformBuffer.buffer;
         model.m_uniformBuffer.descriptor.offset = 0;
         model.m_uniformBuffer.descriptor.range = sizeof(model.m_modelMatrix);
 
-        std::array<VkWriteDescriptorSet, 2> descriptorWrites;
-        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[0].dstSet = model.descriptorSet;
-        descriptorWrites[0].dstBinding = 0;
-        descriptorWrites[0].dstArrayElement = 0;
-        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptorWrites[0].descriptorCount = 1;
-        descriptorWrites[0].pBufferInfo = &model.m_uniformBuffer.descriptor;
+        std::vector<VkWriteDescriptorSet> descriptorWrites;
+        descriptorWrites.emplace_back();
+        descriptorWrites.back().sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites.back().dstSet = model.m_descriptorSet;
+        descriptorWrites.back().dstBinding = 0;
+        descriptorWrites.back().dstArrayElement = 0;
+        descriptorWrites.back().descriptorType =
+            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrites.back().descriptorCount = 1;
+        descriptorWrites.back().pBufferInfo = &model.m_uniformBuffer.descriptor;
 
-        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[1].dstSet = model.descriptorSet;
-        descriptorWrites[1].dstBinding = 1;
-        descriptorWrites[1].dstArrayElement = 0;
-        descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-        descriptorWrites[1].descriptorCount = 1;
-        descriptorWrites[1].pImageInfo = &model.texture.descriptor;
+        uint32_t dstBinding = 1;
+        for (auto &texture : model.m_textures) {
+            descriptorWrites.emplace_back();
+            descriptorWrites.back().sType =
+                VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrites.back().dstSet = model.m_descriptorSet;
+            descriptorWrites.back().dstBinding = dstBinding++;
+            descriptorWrites.back().dstArrayElement = 0;
+            descriptorWrites.back().descriptorType =
+                VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+            descriptorWrites.back().descriptorCount = 1;
+            descriptorWrites.back().pImageInfo = &texture.m_descriptor;
+        }
 
         vkUpdateDescriptorSets(m_device.m_handle,
                                static_cast<uint32_t>(descriptorWrites.size()),
