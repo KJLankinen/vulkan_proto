@@ -48,6 +48,39 @@ struct Renderer {
     std::string m_dataPath;
     glm::vec2 m_prevCursorPos = glm::vec2(0.0f);
 
+    // 60 FPS
+    // const int64_t m_frameTime = 16666;
+    // 144 FPS
+    const int64_t m_frameTime = 6944;
+    const int64_t m_microsPerUpdate = 5000;
+    bool m_lockFPS = true;
+
+    void loop();
+    void update();
+    void render(double tickFraction);
+    void drawFrame();
+    void updateUniformBuffers();
+
+    void init();
+    void initWindow();
+    void terminate();
+
+    void onWindowResize();
+    void recreateSwapchain();
+    void recordCommandBuffers();
+
+    void setupDescriptors();
+    void createModels();
+    void createTextureSampler();
+    void createSemaphores();
+
+    static void windowResizeCallback(GLFWwindow *window, int width, int height);
+    static void cursorPositionCallback(GLFWwindow *window, double xpos,
+                                       double ypos);
+    static void keyEventCallback(GLFWwindow *window, int key, int scancode,
+                                 int action, int mods);
+    static void errorCallback(int error, const char *description);
+
   public:
     Renderer();
     ~Renderer();
@@ -123,36 +156,10 @@ struct Renderer {
                      VkFormat format, VkImageTiling tiling,
                      VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
                      VkImage &image, VkDeviceMemory &imageMemory) const;
-    void transitionImageLayout(VkImage image, VkFormat format,
-                               VkImageLayout oldLayout,
-                               VkImageLayout newLayout) const;
     uint32_t findMemoryType(uint32_t typeFilter,
                             VkMemoryPropertyFlags properties) const;
     VkCommandBuffer beginSingleTimeCommands() const;
     void endSingleTimeCommands(VkCommandBuffer commandBuffer) const;
     Logger &getLogger() const { return m_logger; }
-
-  private:
-    void init();
-    void terminate();
-    void loop();
-
-    void initWindow();
-    void terminateWindow();
-    static void windowResizeCallback(GLFWwindow *window, int width, int height);
-    static void cursorPositionCallback(GLFWwindow *window, double xpos,
-                                       double ypos);
-    static void keyEventCallback(GLFWwindow *window, int key, int scancode,
-                                 int action, int mods);
-    void render();
-    void drawFrame();
-    void onWindowResize();
-    void recreateSwapchain();
-    void updateUniformBuffers();
-    void recordCommandBuffers();
-    void setupDescriptors();
-    void createModels();
-    void createTextureSampler();
-    void createSemaphores();
 };
 } // namespace vulkan_proto

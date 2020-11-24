@@ -16,13 +16,12 @@ namespace vulkan_proto {
 
         // Direction
         m_yawPitch += m_dxdy * m_mouseSpeed;
-        m_dxdy = glm::vec2(0.0f);
-        if (m_yawPitch.y < -M_PI / 2.0f)
-            m_yawPitch.y =
-                -(float)M_PI / 2.0f + fabs(m_yawPitch.y + (float)M_PI / 2.0f);
-        else if (m_yawPitch.y > M_PI / 2.0f)
-            m_yawPitch.y =
-                (float)M_PI / 2.0f - fabs(m_yawPitch.y - (float)M_PI / 2.0f);
+
+        if (m_yawPitch.y < -M_PI / 2.0f) {
+            m_yawPitch.y = -M_PI / 2.0f + 0.001f;
+        } else if (m_yawPitch.y > M_PI / 2.0f) {
+            m_yawPitch.y = M_PI / 2.0f - 0.001f;
+        }
 
         m_direction = glm::vec3(cos(m_yawPitch.y) * sin(m_yawPitch.x),
                                 cos(m_yawPitch.y) * cos(m_yawPitch.x),
@@ -36,6 +35,8 @@ namespace vulkan_proto {
         m_right = directionMultiplier *
                   glm::normalize(glm::cross(m_direction, tempVec));
         m_up = glm::cross(m_right, m_direction);
+
+        m_dxdy = glm::vec2(0.0f);
     }
 
     Logger &Camera::getLogger() { return m_renderer.getLogger(); }

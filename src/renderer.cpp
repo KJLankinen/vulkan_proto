@@ -8,71 +8,6 @@ Renderer::Renderer()
 
 Renderer::~Renderer() {}
 
-void Renderer::init() {
-    initWindow();
-    m_instance.create();
-    LOG("=Create surface=");
-    VK_CHECK(glfwCreateWindowSurface(m_instance.m_handle, m_window, m_allocator,
-                                     &m_surface));
-    m_device.create();
-    m_swapchain.chooseFormats();
-    m_renderPass.create();
-    m_swapchain.create();
-    createTextureSampler();
-    createSemaphores();
-    createModels();
-    setupDescriptors();
-    m_graphicsPipeline.create();
-    recordCommandBuffers();
-}
-
-void Renderer::terminate() {
-    if (m_device.m_handle != VK_NULL_HANDLE) {
-        VK_CHECK(vkDeviceWaitIdle(m_device.m_handle));
-    }
-    m_graphicsPipeline.destroy();
-
-    vkDestroyDescriptorPool(m_device.m_handle, m_descriptorPool, m_allocator);
-    m_descriptorPool = VK_NULL_HANDLE;
-
-    for (auto &dsl : m_descriptorSetLayouts) {
-        vkDestroyDescriptorSetLayout(m_device.m_handle, dsl, m_allocator);
-    }
-    m_descriptorSetLayouts.clear();
-
-    for (auto &model : m_models) {
-        model.destroy();
-    }
-    m_models.clear();
-
-    LOG("=Destroy semaphores=");
-    vkDestroySemaphore(m_device.m_handle, m_renderingFinished, m_allocator);
-    vkDestroySemaphore(m_device.m_handle, m_imageAvailable, m_allocator);
-    m_renderingFinished = VK_NULL_HANDLE;
-    m_imageAvailable = VK_NULL_HANDLE;
-
-    LOG("=Destroy texture sampler=");
-    vkDestroySampler(m_device.m_handle, m_textureSampler, m_allocator);
-    m_textureSampler = VK_NULL_HANDLE;
-
-    m_swapchain.destroy(getSwapchain());
-    m_renderPass.destroy();
-    m_device.destroy();
-
-    LOG("=Destroy surface=");
-    vkDestroySurfaceKHR(m_instance.m_handle, m_surface, m_allocator);
-    m_surface = VK_NULL_HANDLE;
-
-    m_instance.destroy();
-    terminateWindow();
-
-    if (m_window != nullptr) {
-        glfwDestroyWindow(m_window);
-    }
-
-    m_logger.flush();
-}
-
 void Renderer::run(const char *inputFileName) {
     std::ifstream file(inputFileName, std::ios::in);
     if (file.is_open() == false) {
@@ -95,93 +30,44 @@ void Renderer::run(const char *inputFileName) {
 }
 
 void Renderer::loop() {
+    // This loop would probably be somewhere else in a proper engine
+    int64_t lag = 0;
+    auto tPrev = std::chrono::high_resolution_clock::now();
+
     while (!glfwWindowShouldClose(m_window)) {
-        render();
-        m_camera.update();
+        auto tNow = std::chrono::high_resolution_clock::now();
+        lag +=
+            std::chrono::duration_cast<std::chrono::microseconds>(tNow - tPrev)
+                .count();
+        tPrev = tNow;
+
+        while (lag >= m_microsPerUpdate) {
+            update();
+            lag -= m_microsPerUpdate;
+        }
+
+        render(lag / static_cast<double>(m_microsPerUpdate));
         glfwPollEvents();
-    }
-}
+        m_camera.update();
 
-void Renderer::initWindow() {
-    LOG("=Init window=");
-    glfwInit();
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
-    glfwWindowHint(GLFW_FLOATING, GLFW_TRUE);
+        if (m_lockFPS) {
+            // Sleep the rest of the frame time, if we're over
+            int64_t diff =
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::high_resolution_clock::now() - tPrev)
+                    .count();
 
-    m_window = glfwCreateWindow(m_windowWidth, m_windowHeight, "Vulkan window",
-                                nullptr, nullptr);
-
-    glfwSetWindowUserPointer(m_window, static_cast<void *>(this));
-    glfwSetFramebufferSizeCallback(m_window, windowResizeCallback);
-    glfwSetKeyCallback(m_window, keyEventCallback);
-    glfwSetCursorPosCallback(m_window, cursorPositionCallback);
-    glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-    if (glfwRawMouseMotionSupported()) {
-        glfwSetInputMode(m_window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
-    }
-}
-
-void Renderer::terminateWindow() {
-    LOG("=Terminate window=");
-    glfwTerminate();
-}
-
-void Renderer::windowResizeCallback(GLFWwindow *window, int width, int height) {
-    Renderer *renderer =
-        static_cast<Renderer *>(glfwGetWindowUserPointer(window));
-    if (renderer != nullptr) {
-        renderer->m_windowWidth = width;
-        renderer->m_windowHeight = height;
-        renderer->onWindowResize();
-    }
-}
-
-void Renderer::cursorPositionCallback(GLFWwindow *window, double xpos,
-                                      double ypos) {
-    Renderer *renderer =
-        static_cast<Renderer *>(glfwGetWindowUserPointer(window));
-    if (renderer != nullptr) {
-        glm::vec2 newPos(xpos, ypos);
-        renderer->m_camera.m_dxdy = newPos - renderer->m_prevCursorPos;
-        renderer->m_prevCursorPos = newPos;
-    }
-}
-
-void Renderer::keyEventCallback(GLFWwindow *window, int key, int scancode,
-                                int action, int mods) {
-    Renderer *renderer =
-        static_cast<Renderer *>(glfwGetWindowUserPointer(window));
-    if (renderer != nullptr) {
-        if (key == GLFW_KEY_L) {
-            if (action == GLFW_PRESS) {
-                renderer->m_camera.m_velocity.y = 1.0f;
-            } else if (action == GLFW_RELEASE) {
-                renderer->m_camera.m_velocity.y = 0.0f;
-            }
-        } else if (key == GLFW_KEY_N) {
-            if (action == GLFW_PRESS) {
-                renderer->m_camera.m_velocity.y = -1.0f;
-            } else if (action == GLFW_RELEASE) {
-                renderer->m_camera.m_velocity.y = 0.0f;
-            }
-        } else if (key == GLFW_KEY_I) {
-            if (action == GLFW_PRESS) {
-                renderer->m_camera.m_velocity.x = -1.0f;
-            } else if (action == GLFW_RELEASE) {
-                renderer->m_camera.m_velocity.x = 0.0f;
-            }
-        } else if (key == GLFW_KEY_E) {
-            if (action == GLFW_PRESS) {
-                renderer->m_camera.m_velocity.x = 1.0f;
-            } else if (action == GLFW_RELEASE) {
-                renderer->m_camera.m_velocity.x = 0.0f;
+            if (diff < m_frameTime) {
+                std::this_thread::sleep_for(
+                    std::chrono::microseconds(m_frameTime - diff));
             }
         }
     }
 }
 
-void Renderer::render() {
+void Renderer::update() {}
+
+void Renderer::render(double tickFraction) {
     updateUniformBuffers();
     drawFrame();
 }
@@ -239,26 +125,6 @@ void Renderer::drawFrame() {
     }
 }
 
-void Renderer::onWindowResize() {
-    if (m_windowWidth > 0 && m_windowHeight > 0) {
-        if (m_device.m_handle != VK_NULL_HANDLE &&
-            m_surface != VK_NULL_HANDLE) {
-            recreateSwapchain();
-        }
-    }
-}
-
-void Renderer::recreateSwapchain() {
-    if (m_device.m_handle == VK_NULL_HANDLE) {
-        return;
-    }
-    VK_CHECK(vkDeviceWaitIdle(m_device.m_handle));
-    m_renderPass.create(true);
-    m_swapchain.create(true);
-    m_graphicsPipeline.create(true);
-    recordCommandBuffers();
-}
-
 void Renderer::updateUniformBuffers() {
     float aspectRatio = m_swapchain.m_extent.width /
                         static_cast<float>(m_swapchain.m_extent.height);
@@ -284,6 +150,114 @@ void Renderer::updateUniformBuffers() {
                      model.m_uniformBuffer.stagingBuffer,
                      model.m_uniformBuffer.buffer);
     }
+}
+
+void Renderer::init() {
+    initWindow();
+    m_instance.create();
+    LOG("=Create surface=");
+    VK_CHECK(glfwCreateWindowSurface(m_instance.m_handle, m_window, m_allocator,
+                                     &m_surface));
+    m_device.create();
+    m_swapchain.chooseFormats();
+    m_renderPass.create();
+    m_swapchain.create();
+    createTextureSampler();
+    createSemaphores();
+    createModels();
+    setupDescriptors();
+    m_graphicsPipeline.create();
+    recordCommandBuffers();
+}
+
+void Renderer::initWindow() {
+    LOG("=Init window=");
+    glfwInit();
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
+    glfwWindowHint(GLFW_FLOATING, GLFW_TRUE);
+
+    m_window = glfwCreateWindow(m_windowWidth, m_windowHeight, "Vulkan window",
+                                nullptr, nullptr);
+
+    glfwSetErrorCallback(errorCallback);
+    glfwSetWindowUserPointer(m_window, static_cast<void *>(this));
+    glfwSetFramebufferSizeCallback(m_window, windowResizeCallback);
+    glfwSetKeyCallback(m_window, keyEventCallback);
+    glfwSetInputMode(m_window, GLFW_STICKY_KEYS, GLFW_TRUE);
+    glfwSetCursorPosCallback(m_window, cursorPositionCallback);
+    glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    if (glfwRawMouseMotionSupported()) {
+        glfwSetInputMode(m_window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+    }
+}
+
+void Renderer::terminate() {
+    if (m_device.m_handle != VK_NULL_HANDLE) {
+        VK_CHECK(vkDeviceWaitIdle(m_device.m_handle));
+    }
+    m_graphicsPipeline.destroy();
+
+    vkDestroyDescriptorPool(m_device.m_handle, m_descriptorPool, m_allocator);
+    m_descriptorPool = VK_NULL_HANDLE;
+
+    for (auto &dsl : m_descriptorSetLayouts) {
+        vkDestroyDescriptorSetLayout(m_device.m_handle, dsl, m_allocator);
+    }
+    m_descriptorSetLayouts.clear();
+
+    for (auto &model : m_models) {
+        model.destroy();
+    }
+    m_models.clear();
+
+    LOG("=Destroy semaphores=");
+    vkDestroySemaphore(m_device.m_handle, m_renderingFinished, m_allocator);
+    vkDestroySemaphore(m_device.m_handle, m_imageAvailable, m_allocator);
+    m_renderingFinished = VK_NULL_HANDLE;
+    m_imageAvailable = VK_NULL_HANDLE;
+
+    LOG("=Destroy texture sampler=");
+    vkDestroySampler(m_device.m_handle, m_textureSampler, m_allocator);
+    m_textureSampler = VK_NULL_HANDLE;
+
+    m_swapchain.destroy(getSwapchain());
+    m_renderPass.destroy();
+    m_device.destroy();
+
+    LOG("=Destroy surface=");
+    vkDestroySurfaceKHR(m_instance.m_handle, m_surface, m_allocator);
+    m_surface = VK_NULL_HANDLE;
+
+    m_instance.destroy();
+
+    LOG("=Terminate window=");
+    if (m_window != nullptr) {
+        glfwDestroyWindow(m_window);
+    }
+    glfwTerminate();
+
+    m_logger.flush();
+}
+
+void Renderer::onWindowResize() {
+    if (m_windowWidth > 0 && m_windowHeight > 0) {
+        if (m_device.m_handle != VK_NULL_HANDLE &&
+            m_surface != VK_NULL_HANDLE) {
+            recreateSwapchain();
+        }
+    }
+}
+
+void Renderer::recreateSwapchain() {
+    if (m_device.m_handle == VK_NULL_HANDLE) {
+        return;
+    }
+    VK_CHECK(vkDeviceWaitIdle(m_device.m_handle));
+    m_renderPass.create(true);
+    m_swapchain.create(true);
+    m_graphicsPipeline.create(true);
+    recordCommandBuffers();
 }
 
 void Renderer::recordCommandBuffers() {
@@ -503,10 +477,9 @@ void Renderer::setupDescriptors() {
 }
 
 void Renderer::createModels() {
-    std::string modelsPath(m_programInput.at("data_path").get<std::string>() +
-                           m_programInput.at("models")
-                               .at("path")
-                               .get<std::string>());
+    std::string modelsPath(
+        m_programInput.at("data_path").get<std::string>() +
+        m_programInput.at("models").at("path").get<std::string>());
     for (const auto &it : m_programInput.at("models").at("objs")) {
         m_models.push_back(Model(*this));
         m_models.back().create(modelsPath.c_str(), it);
@@ -546,6 +519,72 @@ void Renderer::createSemaphores() {
                                &m_imageAvailable));
     VK_CHECK(vkCreateSemaphore(m_device.m_handle, &semaphoreCi, m_allocator,
                                &m_renderingFinished));
+}
+
+void Renderer::windowResizeCallback(GLFWwindow *window, int width, int height) {
+    Renderer *renderer =
+        static_cast<Renderer *>(glfwGetWindowUserPointer(window));
+    if (renderer != nullptr) {
+        renderer->m_windowWidth = width;
+        renderer->m_windowHeight = height;
+        renderer->onWindowResize();
+    }
+}
+
+void Renderer::cursorPositionCallback(GLFWwindow *window, double xpos,
+                                      double ypos) {
+    Renderer *renderer =
+        static_cast<Renderer *>(glfwGetWindowUserPointer(window));
+    if (renderer != nullptr) {
+        glm::vec2 newPos(xpos, ypos);
+        renderer->m_camera.m_dxdy = newPos - renderer->m_prevCursorPos;
+        renderer->m_prevCursorPos = newPos;
+    }
+}
+
+void Renderer::keyEventCallback(GLFWwindow *window, int key, int scancode,
+                                int action, int mods) {
+    Renderer *renderer =
+        static_cast<Renderer *>(glfwGetWindowUserPointer(window));
+    if (renderer != nullptr) {
+        if (key == GLFW_KEY_ESCAPE) {
+            if (action == GLFW_RELEASE) {
+                glfwSetWindowShouldClose(window, GLFW_TRUE);
+            }
+        }
+        if (key == GLFW_KEY_L) {
+            if (action == GLFW_PRESS) {
+                renderer->m_camera.m_velocity.y += 1.0f;
+            } else if (action == GLFW_RELEASE) {
+                renderer->m_camera.m_velocity.y -= 1.0f;
+            }
+        }
+        if (key == GLFW_KEY_N) {
+            if (action == GLFW_PRESS) {
+                renderer->m_camera.m_velocity.y -= 1.0f;
+            } else if (action == GLFW_RELEASE) {
+                renderer->m_camera.m_velocity.y += 1.0f;
+            }
+        }
+        if (key == GLFW_KEY_I) {
+            if (action == GLFW_PRESS) {
+                renderer->m_camera.m_velocity.x -= 1.0f;
+            } else if (action == GLFW_RELEASE) {
+                renderer->m_camera.m_velocity.x += 1.0f;
+            }
+        }
+        if (key == GLFW_KEY_E) {
+            if (action == GLFW_PRESS) {
+                renderer->m_camera.m_velocity.x += 1.0f;
+            } else if (action == GLFW_RELEASE) {
+                renderer->m_camera.m_velocity.x -= 1.0f;
+            }
+        }
+    }
+}
+
+void Renderer::errorCallback(int error, const char *description) {
+    fprintf(stderr, "GLFW error (%d): %s\n", error, description);
 }
 
 void Renderer::copyCPUToGPU(const void *srcData, VkDeviceSize sizeInBytes,
@@ -651,65 +690,6 @@ void Renderer::createImage(uint32_t width, uint32_t height, uint32_t depth,
         vkAllocateMemory(m_device.m_handle, &allocInfo, nullptr, &imageMemory));
 
     VK_CHECK(vkBindImageMemory(m_device.m_handle, image, imageMemory, 0));
-}
-
-void Renderer::transitionImageLayout(VkImage image, VkFormat format,
-                                     VkImageLayout oldLayout,
-                                     VkImageLayout newLayout) const {
-    VkCommandBuffer commandBuffer = beginSingleTimeCommands();
-    VkImageMemoryBarrier barrier = {};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.oldLayout = oldLayout;
-    barrier.newLayout = newLayout;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = image;
-    barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = 1;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = 1;
-
-    VkPipelineStageFlags sourceStage;
-    VkPipelineStageFlags destinationStage;
-
-    if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-        if (format == VK_FORMAT_D32_SFLOAT_S8_UINT ||
-            format == VK_FORMAT_D24_UNORM_S8_UINT)
-            barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
-    } else
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-
-    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
-        newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
-        barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-
-        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-    } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
-               newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-        sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-        destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    } else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
-               newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
-        barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-                                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    } else {
-        THROW_IF(true, "Unsupported layout transition!");
-    }
-
-    vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0,
-                         nullptr, 0, nullptr, 1, &barrier);
-    endSingleTimeCommands(commandBuffer);
 }
 
 uint32_t Renderer::findMemoryType(uint32_t typeFilter,
